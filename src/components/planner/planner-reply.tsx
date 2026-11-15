@@ -5,7 +5,6 @@ import { Clock, ExternalLink, MessageCircleQuestion } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 import { splitPlannerReply } from "@/lib/event-plan";
-import { cn } from "@/lib/utils";
 
 function Md({ children }: { children: string }) {
   return (
@@ -78,8 +77,6 @@ export function PlannerReplyView({ text }: { text: string }) {
       {options.length > 0 && (
         <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-3">
           {options.map((o, i) => {
-            const [, letter, label] = o.title.match(/^Option ([A-Z]):\s*(.*)$/) ?? [];
-            const featured = /best value/i.test(label ?? "");
             const fields = new Map(o.body.split(/\r?\n/).flatMap((line) => {
               const match = line.match(/^\s*-\s*([^:]+):\s*(.*)$/);
               return match?.[1] && match[2] ? [[match[1], match[2]] as const] : [];
@@ -93,16 +90,13 @@ export function PlannerReplyView({ text }: { text: string }) {
             return (
               <article
                 key={o.title}
-                className={cn(
-                  "flex min-w-0 flex-col gap-5 rounded-lg border bg-card p-6 shadow-card",
-                  featured ? "border-primary ring-1 ring-primary" : "border-border",
-                )}
+                className="flex min-w-0 flex-col gap-5 rounded-lg border border-border bg-card p-6 shadow-card"
               >
                 <header>
-                  <p className={cn("text-xs font-semibold uppercase", featured ? "text-primary" : "text-muted-foreground")}>
-                    {label || `Option ${letter}`}
+                  <p className="text-xs font-semibold uppercase text-muted-foreground">
+                    Option {i + 1}
                   </p>
-                  <h3 className="mt-2 break-words text-xl font-medium">{restaurant || o.title}</h3>
+                  <h3 className="mt-2 break-words text-xl font-medium">{restaurant || `Option ${i + 1}`}</h3>
                   {fields.get("Platform") && <p className="mt-1 text-sm text-muted-foreground">{fields.get("Platform")}</p>}
                 </header>
                 {price && <div>
@@ -116,11 +110,11 @@ export function PlannerReplyView({ text }: { text: string }) {
                 </div>}
                 {fields.get("Estimated delivery") && <p className="flex items-center gap-2 text-sm text-muted-foreground"><Clock className="size-4 shrink-0" />{fields.get("Estimated delivery")?.replace(" (advertised)", "")}</p>}
                 <div className="mt-auto grid gap-2">
-                  {safeLink && <Button asChild variant={featured ? "hero" : "outline"} className="w-full"><a href={safeLink} target="_blank" rel="noopener noreferrer">View restaurant <ExternalLink /></a></Button>}
+                  {safeLink && <Button asChild variant="outline" className="w-full"><a href={safeLink} target="_blank" rel="noopener noreferrer">View restaurant <ExternalLink /></a></Button>}
                   <Accordion type="single" collapsible>
                     <AccordionItem value={`details-${i}`} className="border-0">
                       <AccordionTrigger>Price breakdown & details</AccordionTrigger>
-                      <AccordionContent><Md>{o.body}</Md></AccordionContent>
+                      <AccordionContent><Md>{o.body.split(/\r?\n/).filter((line) => !/^\s*-\s*Why:/i.test(line)).join("\n")}</Md></AccordionContent>
                     </AccordionItem>
                   </Accordion>
                 </div>
@@ -133,7 +127,7 @@ export function PlannerReplyView({ text }: { text: string }) {
       {details.length > 0 && <Accordion type="single" collapsible>
         <AccordionItem value="method">
           <AccordionTrigger>How these options were chosen & important notes</AccordionTrigger>
-          <AccordionContent><div className="grid gap-5">{details.map((s) => <section key={s.title}><h3 className="mb-2 text-lg font-medium">{s.title}</h3><Md>{s.body}</Md></section>)}</div></AccordionContent>
+          <AccordionContent><div className="grid gap-5">{details.map((s) => <section key={s.title}><h3 className="mb-2 text-lg font-medium">{s.title}</h3><Md>{s.body.split(/\r?\n/).filter((line) => !/Cheapest\s*=|Best Value\s*=/i.test(line)).join("\n")}</Md></section>)}</div></AccordionContent>
         </AccordionItem>
       </Accordion>}
     </div>
