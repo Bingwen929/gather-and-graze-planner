@@ -28,3 +28,8 @@ use the editor.
   own key and store it in Secrets.
 - **Secrets.** Lovable manages them. Do not put secret values in the repo.
 <!-- LOVABLE:END -->
+
+## Project rules
+
+- The event form talks to the n8n "AI Pizza Order Optimizer" workflow through its public chat trigger (`src/lib/planner.functions.ts`), called server-side via the connector gateway — the workflow is conversational, so the results page keeps one sessionId and lets users answer follow-up questions.
+- Form validation and the plain-language message sent to n8n live in `src/lib/event-plan.ts` and are covered by `src/test/event-plan.test.ts` — keep rules in one shared module so the landing and results pages agree.

@@ -1,23 +1,313 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, useNavigate } from "@tanstack/react-router";
+import { useState, type FormEvent } from "react";
+import { ArrowRight, CalendarDays, MapPin, Search, Sparkles, Utensils } from "lucide-react";
 
-// The home route ships no og:image, so serve-time hosting can inject the
-// project's social preview (explicit og:image or latest screenshot).
+import heroTable from "@/assets/hero-table.jpg";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Chip } from "@/components/planner/chip";
+import { Field } from "@/components/planner/field";
+import { NumberStepper } from "@/components/planner/number-stepper";
+import { CUISINES, DIETS, eventPlanSchema, type Cuisine } from "@/lib/event-plan";
+
 export const Route = createFileRoute("/")({
+  head: () => ({
+    meta: [
+      { title: "Spread — Food sourcing for your next event" },
+      {
+        name: "description",
+        content:
+          "Tell us your headcount, dietary needs, date and budget. Spread compares DoorDash and Uber Eats to find the best food for your event.",
+      },
+      { property: "og:title", content: "Spread — Food sourcing for your next event" },
+      {
+        property: "og:description",
+        content:
+          "Headcount, dietary needs, date and budget in — the best group food order out.",
+      },
+      { property: "og:type", content: "website" },
+      { name: "twitter:card", content: "summary_large_image" },
+    ],
+  }),
   component: Index,
 });
 
-// IMPORTANT: Replace this placeholder. See ./README.md for routing conventions.
+type FieldKey = "guests" | "dietaryCount" | "date" | "time" | "budget" | "address";
+type Errors = Partial<Record<FieldKey, string>>;
+
 function Index() {
+  const navigate = useNavigate();
+  const [guests, setGuests] = useState("25");
+  const [dietaryCount, setDietaryCount] = useState("0");
+  const [diets, setDiets] = useState<string[]>([]);
+  const [cuisine, setCuisine] = useState<Cuisine | undefined>(undefined);
+  const [date, setDate] = useState("");
+  const [time, setTime] = useState("18:00");
+  const [budget, setBudget] = useState("");
+  const [address, setAddress] = useState("");
+  const [errors, setErrors] = useState<Errors>({});
+
+  const perPerson =
+    Number(budget) > 0 && Number(guests) > 0 ? Number(budget) / Number(guests) : null;
+
+  function onSubmit(e: FormEvent) {
+    e.preventDefault();
+    const result = eventPlanSchema.safeParse({
+      guests,
+      dietaryCount: dietaryCount || 0,
+      diets: Number(dietaryCount) > 0 ? diets : [],
+      cuisine,
+      date,
+      time,
+      budget: budget.trim() ? budget : undefined,
+      address,
+    });
+    if (!result.success) {
+      const next: Errors = {};
+      for (const issue of result.error.issues) {
+        const key = String(issue.path[0]) as FieldKey;
+        if (!next[key]) next[key] = issue.message;
+      }
+      setErrors(next);
+      return;
+    }
+    setErrors({});
+    const p = result.data;
+    navigate({
+      to: "/results",
+      search: {
+        sid: crypto.randomUUID(),
+        guests: p.guests,
+        dietaryCount: p.dietaryCount,
+        diets: p.diets.length ? p.diets.join(",") : undefined,
+        cuisine: p.cuisine,
+        date: p.date,
+        time: p.time,
+        budget: p.budget,
+        address: p.address,
+      },
+    });
+  }
+
   return (
-    <div
-      className="flex min-h-screen items-center justify-center"
-      style={{ backgroundColor: "#fcfbf8" }}
-    >
-      <img
-        data-lovable-blank-page-placeholder="REMOVE_THIS"
-        src="https://cdn.gpteng.co/blank-app-v1.svg"
-        alt="Your app will live here!"
-      />
-    </div>
+    <main className="mx-auto grid max-w-7xl gap-12 px-5 pb-24 pt-6 sm:px-8 lg:grid-cols-[1fr_1.05fr] lg:gap-16 lg:pt-10">
+      {/* Left: story */}
+      <section className="animate-rise lg:sticky lg:top-8 lg:self-start">
+        <p className="inline-flex items-center gap-2 rounded-full bg-secondary px-3 py-1 text-xs font-semibold uppercase tracking-[0.14em] text-secondary-foreground">
+          <Utensils className="size-3.5" /> Event food sourcing
+        </p>
+        <h1 className="mt-5 text-5xl font-medium leading-[1.02] text-foreground sm:text-6xl">
+          Feed the whole room,{" "}
+          <em className="font-normal italic text-primary">without the spreadsheet.</em>
+        </h1>
+        <p className="mt-5 max-w-md text-lg text-muted-foreground">
+          Tell us who's coming and when. We compare nearby restaurants on DoorDash and Uber Eats
+          and bring back the best-value orders for your crowd.
+        </p>
+
+        <figure className="relative mt-8 overflow-hidden rounded-3xl shadow-card">
+          <img
+            src={heroTable}
+            alt="A long table spread with tacos, sushi, pizza, sandwiches and burgers"
+            width={1600}
+            height={1104}
+            className="aspect-[4/3] w-full object-cover"
+          />
+          <div className="absolute inset-0 bg-gradient-fade" />
+          <figcaption className="absolute inset-x-5 bottom-5 flex flex-wrap gap-2">
+            {["Sized to your headcount", "Respects dietary needs", "Stays on budget"].map((t) => (
+              <span
+                key={t}
+                className="rounded-full bg-card/90 px-3 py-1.5 text-xs font-semibold text-foreground backdrop-blur"
+              >
+                {t}
+              </span>
+            ))}
+          </figcaption>
+        </figure>
+
+        <ol className="mt-8 grid gap-4 sm:grid-cols-3">
+          {[
+            { icon: CalendarDays, t: "Share the details", d: "Headcount, date, a few preferences." },
+            { icon: Search, t: "We search", d: "Menus compared across delivery apps." },
+            { icon: Sparkles, t: "Pick an order", d: "Cheapest, best value and an alternative." },
+          ].map(({ icon: Icon, t, d }) => (
+            <li key={t} className="grid gap-1.5">
+              <Icon className="size-5 text-primary" />
+              <span className="font-display text-base font-medium">{t}</span>
+              <span className="text-sm text-muted-foreground">{d}</span>
+            </li>
+          ))}
+        </ol>
+      </section>
+
+      {/* Right: form */}
+      <section
+        className="animate-rise rounded-[2rem] border border-border bg-card p-6 shadow-card [animation-delay:120ms] sm:p-10"
+        aria-labelledby="plan-title"
+      >
+        <h2 id="plan-title" className="text-3xl font-medium">
+          Tell us about your event
+        </h2>
+        <p className="mt-2 text-sm text-muted-foreground">
+          Takes about a minute. Not sure about the food or budget? Skip them — the planner will
+          help you decide.
+        </p>
+
+        <form onSubmit={onSubmit} noValidate className="mt-8">
+          <Field
+            index="01"
+            title="How many people are coming?"
+            htmlFor="guests"
+            error={errors.guests}
+          >
+            <NumberStepper
+              id="guests"
+              value={guests}
+              onChange={setGuests}
+              min={1}
+              unit="guests"
+              invalid={!!errors.guests}
+            />
+          </Field>
+
+          <Field
+            index="02"
+            title="How many have dietary restrictions?"
+            htmlFor="dietaryCount"
+            hint="Enter 0 if nobody does."
+            error={errors.dietaryCount}
+          >
+            <NumberStepper
+              id="dietaryCount"
+              value={dietaryCount}
+              onChange={setDietaryCount}
+              min={0}
+              unit="guests"
+              invalid={!!errors.dietaryCount}
+            />
+            {Number(dietaryCount) > 0 && (
+              <div className="grid gap-2 animate-rise">
+                <span className="text-sm text-muted-foreground">
+                  Which kinds? <span className="italic">(optional)</span>
+                </span>
+                <div className="flex flex-wrap gap-2">
+                  {DIETS.map((d) => {
+                    const on = diets.includes(d);
+                    return (
+                      <Chip
+                        key={d}
+                        tone="olive"
+                        on={on}
+                        onClick={() =>
+                          setDiets((prev) => (on ? prev.filter((x) => x !== d) : [...prev, d]))
+                        }
+                      >
+                        {d}
+                      </Chip>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+          </Field>
+
+          <Field index="03" title="Preferred cuisine" optional>
+            <div className="flex flex-wrap gap-2" role="group" aria-label="Preferred cuisine">
+              <Chip on={cuisine === undefined} onClick={() => setCuisine(undefined)}>
+                Not sure yet
+              </Chip>
+              {CUISINES.map((c) => (
+                <Chip key={c.value} on={cuisine === c.value} onClick={() => setCuisine(c.value)}>
+                  {c.label}
+                </Chip>
+              ))}
+            </div>
+          </Field>
+
+          <Field
+            index="04"
+            title="When is the event?"
+            htmlFor="date"
+            error={errors.date ?? errors.time}
+          >
+            <div className="grid grid-cols-[1.4fr_1fr] gap-3">
+              <Input
+                id="date"
+                type="date"
+                value={date}
+                onChange={(e) => setDate(e.target.value)}
+                aria-invalid={!!errors.date}
+                className="h-12 rounded-xl bg-card text-base aria-[invalid=true]:border-destructive"
+              />
+              <Input
+                id="time"
+                type="time"
+                aria-label="Start time"
+                value={time}
+                onChange={(e) => setTime(e.target.value)}
+                aria-invalid={!!errors.time}
+                className="h-12 rounded-xl bg-card text-base aria-[invalid=true]:border-destructive"
+              />
+            </div>
+          </Field>
+
+          <Field
+            index="05"
+            title="Ideal total budget"
+            optional
+            htmlFor="budget"
+            error={errors.budget}
+          >
+            <div className="flex max-w-xs items-center rounded-xl border border-input bg-card px-4 focus-within:ring-1 focus-within:ring-ring">
+              <span className="font-display text-xl text-muted-foreground">$</span>
+              <input
+                id="budget"
+                inputMode="decimal"
+                placeholder="e.g. 400"
+                value={budget}
+                onChange={(e) => setBudget(e.target.value.replace(/[^0-9.]/g, ""))}
+                className="h-12 w-full bg-transparent px-2 text-base text-foreground outline-none placeholder:text-muted-foreground"
+              />
+            </div>
+            {perPerson !== null && (
+              <p className="text-sm text-muted-foreground">
+                About <span className="font-semibold text-foreground">${perPerson.toFixed(2)}</span>{" "}
+                per person
+              </p>
+            )}
+          </Field>
+
+          <Field
+            index="06"
+            title="Where should the food go?"
+            htmlFor="address"
+            hint="A street address or ZIP code, so we can find restaurants that deliver."
+            error={errors.address}
+          >
+            <div className="relative">
+              <MapPin className="pointer-events-none absolute left-4 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+              <Input
+                id="address"
+                placeholder="500 El Camino Real, Santa Clara, CA 95053"
+                value={address}
+                onChange={(e) => setAddress(e.target.value)}
+                aria-invalid={!!errors.address}
+                className="h-12 rounded-xl bg-card pl-10 text-base aria-[invalid=true]:border-destructive"
+              />
+            </div>
+          </Field>
+
+          <div className="mt-4 flex flex-col items-start gap-3 border-t border-border pt-8 sm:flex-row sm:items-center sm:justify-between">
+            <p className="text-xs text-muted-foreground">
+              We never place orders or take payment.
+            </p>
+            <Button type="submit" variant="hero" size="xl" className="w-full sm:w-auto">
+              Find food for my event <ArrowRight />
+            </Button>
+          </div>
+        </form>
+      </section>
+    </main>
   );
 }
