@@ -11,11 +11,14 @@ function Md({ children }: { children: string }) {
       <ReactMarkdown
         remarkPlugins={[remarkGfm]}
         components={{
-          a: ({ href, children }) => (
-            <a href={href} target="_blank" rel="noreferrer noopener">
-              {children}
-            </a>
-          ),
+          a: ({ href, children }) => {
+            const bare = typeof children === "string" && children === href;
+            return (
+              <a href={href} target="_blank" rel="noreferrer noopener">
+                {bare ? "Open restaurant page ↗" : children}
+              </a>
+            );
+          },
         }}
       >
         {children}
