@@ -1,0 +1,923 @@
+{
+  "name": "AI Food Order Optimizer",
+  "nodes": [
+    {
+      "parameters": {
+        "public": true,
+        "initialMessages": "Hi! Tell me where to deliver, how many people, your total budget and what toppings you like. Example: Find the best pizza deal for 8 people, delivered to 1000 Wilshire Blvd, Los Angeles, with a total budget of $100. We prefer pepperoni and cheese.",
+        "options": {}
+      },
+      "id": "20d794ff-a012-4e18-9660-b7acb39c40d5",
+      "name": "Chat Trigger",
+      "type": "@n8n/n8n-nodes-langchain.chatTrigger",
+      "typeVersion": 1.5,
+      "position": [
+        1696,
+        0
+      ],
+      "webhookId": "c1d60280-b406-4959-8ddb-f24ab633e92a"
+    },
+    {
+      "parameters": {
+        "hasOutputParser": true,
+        "options": {
+          "systemMessage": "You extract structured parameters for a group pizza ordering assistant.\nRead the whole conversation so far and merge details the user gave across several messages.\nEssential fields: delivery address or ZIP code, number of people, total budget in USD.\nOptional fields: food preferences, dietary restrictions, desired delivery time.\nRules:\n- Never invent values. If an essential field is missing, use an empty string (address) or 0 (numbers).\n- Convert amounts such as \"$100\" or \"100 bucks\" to the number 100.\n- Put each topping or style the user likes into preferences as a lowercase string (for example \"pepperoni\", \"cheese\").\n- If any essential field is missing, write ONE short, friendly follow_up_question asking only for what is missing. Otherwise leave follow_up_question empty.\n- Do not search for restaurants and do not place orders. Only extract."
+        }
+      },
+      "id": "f529eb7c-32c3-4b1b-9403-63c7b5524be2",
+      "name": "Extract Pizza Request",
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 3.1,
+      "position": [
+        1936,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "model": {
+          "__rl": true,
+          "mode": "list",
+          "value": "gpt-6-luna",
+          "cachedResultName": "gpt-6-luna"
+        },
+        "builtInTools": {},
+        "options": {}
+      },
+      "id": "ff272570-2a74-474a-81ac-52063f7edf87",
+      "name": "OpenAI Chat Model",
+      "type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
+      "typeVersion": 1.3,
+      "position": [
+        1872,
+        224
+      ],
+      "credentials": {
+        "openAiApi": {
+          "id": null,
+          "name": "Gateway credits",
+          "__aiGatewayManaged": true
+        }
+      }
+    },
+    {
+      "parameters": {
+        "contextWindowLength": 10
+      },
+      "id": "3240c1a3-c3b3-4bd0-9f69-043024f732b0",
+      "name": "Conversation Memory",
+      "type": "@n8n/n8n-nodes-langchain.memoryBufferWindow",
+      "typeVersion": 1.4,
+      "position": [
+        2016,
+        224
+      ]
+    },
+    {
+      "parameters": {
+        "schemaType": "manual",
+        "inputSchema": "{\n  \"type\": \"object\",\n  \"properties\": {\n    \"address\": { \"type\": \"string\", \"description\": \"Delivery street address or ZIP code. Empty string if not given.\" },\n    \"party_size\": { \"type\": \"number\", \"description\": \"Number of people to feed. 0 if not given.\" },\n    \"budget_usd\": { \"type\": \"number\", \"description\": \"Total budget in US dollars. 0 if not given.\" },\n    \"preferences\": { \"type\": \"array\", \"items\": { \"type\": \"string\" }, \"description\": \"Preferred toppings or pizza styles, lowercase.\" },\n    \"dietary_restrictions\": { \"type\": \"array\", \"items\": { \"type\": \"string\" }, \"description\": \"Dietary restrictions such as vegetarian, vegan, gluten-free. Empty array if none.\" },\n    \"desired_delivery_time\": { \"type\": \"string\", \"description\": \"Desired delivery time or maximum wait as written by the user. Empty string if not given.\" },\n    \"follow_up_question\": { \"type\": \"string\", \"description\": \"A single short question asking for the missing essential information. Empty string if nothing essential is missing.\" }\n  },\n  \"required\": [\"address\", \"party_size\", \"budget_usd\", \"preferences\", \"dietary_restrictions\", \"desired_delivery_time\", \"follow_up_question\"]\n}"
+      },
+      "id": "ae298e44-6114-49c6-bb74-6335210ecaa0",
+      "name": "Request Schema",
+      "type": "@n8n/n8n-nodes-langchain.outputParserStructured",
+      "typeVersion": 1.3,
+      "position": [
+        2160,
+        224
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const LF = String.fromCharCode(10);\nlet raw = $input.first().json.output;\nif (typeof raw === 'string') {\n  try { raw = JSON.parse(raw); } catch (e) { raw = {}; }\n}\nraw = raw || {};\nfunction num(v) {\n  if (typeof v === 'number') return v;\n  const n = parseFloat(String(v === undefined || v === null ? '' : v).replace(/[^0-9.-]/g, '')); // 마이너스는 남겨서 0 이하로 걸리게\n  return isNaN(n) ? 0 : n;\n}\nfunction list(v) {\n  if (Array.isArray(v)) return v.map(function (s) { return String(s).trim().toLowerCase(); }).filter(Boolean);\n  if (typeof v === 'string' && v.trim()) return v.split(',').map(function (s) { return s.trim().toLowerCase(); }).filter(Boolean);\n  return [];\n}\nconst request = {\n  address: String(raw.address || '').trim(),\n  party_size: Math.round(num(raw.party_size)),\n  budget_usd: num(raw.budget_usd),\n  preferences: list(raw.preferences),\n  dietary_restrictions: list(raw.dietary_restrictions),\n  desired_delivery_time: String(raw.desired_delivery_time || '').trim(),\n};\nconst missing = [];\nif (!request.address) missing.push('a delivery address or ZIP code');\nif (!(request.party_size > 0)) missing.push('how many people you are feeding');\nif (!(request.budget_usd > 0)) missing.push('your total budget in USD');\nconst complete = missing.length === 0;\nlet reply = '';\nif (!complete) {\n  reply = String(raw.follow_up_question || '').trim();\n  if (!reply) reply = 'To find the best pizza deal I still need ' + missing.join(', ') + '.';\n}\nreturn [{ json: { complete: complete, missing: missing, request: request, output: reply } }];"
+      },
+      "id": "3e06dccd-f53e-4472-a472-ae379abe9215",
+      "name": "Validate Request",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2288,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "combinator": "and",
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "leftValue": "={{ $json.complete }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "abc515de-9746-4d8c-9cfe-e54949d68f3d",
+      "name": "Request Complete?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        2512,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "reply-text",
+              "name": "output",
+              "value": "={{ $json.output }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "e521fcdd-ad2b-48de-9726-5e84ff3beef3",
+      "name": "Ask For Missing Details",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.5,
+      "position": [
+        2736,
+        224
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// 하위 워크플로 입구: 채팅·평가·Webhook 어디서 불러도 { request } 하나로 맞춘다\nconst j = $input.first().json;\nreturn [{ json: { request: j.request || j } }];\n"
+      },
+      "id": "e26c4151-edc4-4ab1-8c6f-d7c170bc767a",
+      "name": "Core Request",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2800,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// 같은 주소면 같은 키가 되도록 소문자·공백·문장부호를 정리한다\nconst req = $('Core Request').first().json.request;\nconst addr = req.address.toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();\nreturn [{ json: { cache_key: 'pizza|' + addr, now_ms: Date.now(), request: req } }];\n"
+      },
+      "id": "c3949432-9768-4013-82a9-2c97a1322033",
+      "name": "Make Cache Key",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3008,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "get",
+        "dataTableId": {
+          "__rl": true,
+          "mode": "name",
+          "value": "food_menu_cache"
+        },
+        "matchType": "allConditions",
+        "filters": {
+          "conditions": [
+            {
+              "keyName": "cache_key",
+              "keyValue": "={{ $json.cache_key }}"
+            }
+          ]
+        },
+        "limit": 1
+      },
+      "id": "bb0e8882-9342-4aaf-823e-dfcbf7e867ca",
+      "name": "Lookup Menu Cache",
+      "type": "n8n-nodes-base.dataTable",
+      "typeVersion": 1.1,
+      "position": [
+        3232,
+        0
+      ],
+      "alwaysOutputData": true
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "combinator": "and",
+          "conditions": [
+            {
+              "id": "2a682a40-ec38-4cbb-87aa-85943f7d13ee",
+              "leftValue": "={{ !!$json.rows_json && Number($json.expires_at_ms) > Date.now() }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "7465bad0-acca-4c7e-bbb9-4eea2b127d9a",
+      "name": "Cache Hit?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        3456,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// 캐시에 저장해 둔 메뉴 행을 Normalize Menus 출력과 같은 모양으로 되돌린다\nconst row = $input.first().json;\nconst rows = JSON.parse(row.rows_json || '[]');\nreturn rows.map(function (r) { return { json: Object.assign({}, r, { cache_hit: true }) }; });\n"
+      },
+      "id": "f33b1633-76fc-44e2-bfaa-cd414a6a1e88",
+      "name": "Use Cached Menus",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        4800,
+        -112
+      ]
+    },
+    {
+      "parameters": {
+        "url": "https://api.api.sh/doordash/v1/search",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpTemplatedCustomAuth",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "address",
+              "value": "={{ $('Core Request').first().json.request.address }}"
+            },
+            {
+              "name": "q",
+              "value": "pizza"
+            },
+            {
+              "name": "raw",
+              "value": "0"
+            }
+          ]
+        },
+        "options": {
+          "timeout": 120000
+        }
+      },
+      "id": "d20643fe-8d69-4f1e-8069-cae0be5ca93e",
+      "name": "Search DoorDash",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.5,
+      "position": [
+        3680,
+        96
+      ],
+      "credentials": {
+        "httpTemplatedCustomAuth": {
+          "id": "6BR71iuNiCckIW3m",
+          "name": "API.SH API Key (Seongjae S)"
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "url": "https://api.api.sh/ubereats/v1/stores",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpTemplatedCustomAuth",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "address",
+              "value": "={{ $('Core Request').first().json.request.address }}"
+            },
+            {
+              "name": "q",
+              "value": "pizza"
+            },
+            {
+              "name": "raw",
+              "value": "0"
+            }
+          ]
+        },
+        "options": {
+          "timeout": 120000
+        }
+      },
+      "id": "a7362d8b-f75c-4a12-99a7-6c9af0614921",
+      "name": "Search Uber Eats",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.5,
+      "position": [
+        3680,
+        256
+      ],
+      "credentials": {
+        "httpTemplatedCustomAuth": {
+          "id": "6BR71iuNiCckIW3m",
+          "name": "API.SH API Key (Seongjae S)"
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {},
+      "id": "685b9794-272f-47dd-a8d6-a29d3939a9a3",
+      "name": "Combine Search Results",
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3.2,
+      "position": [
+        3888,
+        176
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const request = $('Core Request').first().json.request;\nconst errors = [];\nfunction readAll(name) {\n  try { return $(name).all(); } catch (e) { errors.push(name + ': ' + e.message); return []; }\n}\nfunction storesOf(items, label) {\n  const list = [];\n  for (const it of items) {\n    const j = it.json || {};\n    if (j.error || j.success === false) {\n      const e = j.error;\n      errors.push(label + ': ' + (typeof e === 'string' ? e : (e && (e.message || e.description)) || 'request failed'));\n      continue;\n    }\n    if (Array.isArray(j.stores)) list.push.apply(list, j.stores);\n  }\n  return list;\n}\nconst dd = storesOf(readAll('Search DoorDash'), 'DoorDash search');\nconst ue = storesOf(readAll('Search Uber Eats'), 'Uber Eats search');\nconst PER_PLATFORM = 4;\nfunction looksLikePizza(s) {\n  const text = [s.name, s.description].filter(Boolean).join(' ');\n  return /pizz|pie|slice|italian/i.test(text);\n}\nfunction rank(list) {\n  return list.slice().sort(function (a, b) {\n    const pa = looksLikePizza(a) ? 1 : 0;\n    const pb = looksLikePizza(b) ? 1 : 0;\n    if (pa !== pb) return pb - pa;\n    const ra = typeof a.rating === 'number' ? a.rating : 0;\n    const rb = typeof b.rating === 'number' ? b.rating : 0;\n    return rb - ra;\n  });\n}\nconst out = [];\nconst ddOpen = dd.filter(function (s) { return s.id && s.open_now !== false && s.delivery_available !== false; });\nrank(ddOpen).slice(0, PER_PLATFORM).forEach(function (s) {\n  out.push({ json: {\n    platform: 'DoorDash', store_id: String(s.id), store_url: s.url || null, restaurant: s.name || null,\n    rating: s.rating === undefined ? null : s.rating, rating_count: s.rating_count === undefined ? null : s.rating_count,\n    search_delivery_fee: typeof s.delivery_fee === 'number' ? s.delivery_fee : null,\n    search_service_fee: null,\n    minimum_subtotal: typeof s.minimum_subtotal === 'number' ? s.minimum_subtotal : null,\n    eta_min: typeof s.eta_minutes === 'number' ? s.eta_minutes : null,\n    eta_max: typeof s.eta_minutes === 'number' ? s.eta_minutes : null,\n    offers: [], dashpass: s.dashpass === true, request: request,\n  } });\n});\nconst ueOpen = ue.filter(function (s) { return s.id && s.accepting_orders !== false; });\nrank(ueOpen).slice(0, PER_PLATFORM).forEach(function (s) {\n  out.push({ json: {\n    platform: 'Uber Eats', store_id: String(s.id), store_url: s.url || null, restaurant: s.name || null,\n    rating: s.rating === undefined ? null : s.rating, rating_count: s.rating_count === undefined ? null : s.rating_count,\n    search_delivery_fee: typeof s.delivery_fee === 'number' ? s.delivery_fee : null,\n    search_service_fee: typeof s.service_fee === 'number' ? s.service_fee : null,\n    minimum_subtotal: null,\n    eta_min: typeof s.eta_min === 'number' ? s.eta_min : null,\n    eta_max: typeof s.eta_max === 'number' ? s.eta_max : null,\n    offers: Array.isArray(s.offers) ? s.offers : [], dashpass: false, request: request,\n  } });\n});\nif (out.length === 0) {\n  if (errors.length === 0) errors.push('Searches returned no open pizza restaurants for this address.');\n  return [{ json: { mock: true, errors: errors, request: request } }];\n}\nreturn out;"
+      },
+      "id": "ae1fb8eb-2855-40cf-958e-4050591b9b65",
+      "name": "Select Top Pizzerias",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        4112,
+        176
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "combinator": "and",
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "leftValue": "={{ $json.mock === true }}",
+              "rightValue": false,
+              "operator": {
+                "type": "boolean",
+                "operation": "false",
+                "singleValue": true
+              }
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "7337b092-39dd-4569-8d86-ef866d00d06b",
+      "name": "Live Stores Found?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        4336,
+        176
+      ]
+    },
+    {
+      "parameters": {
+        "url": "=https://api.api.sh/{{ $json.platform === \"DoorDash\" ? \"doordash\" : \"ubereats\" }}/v1/store",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpTemplatedCustomAuth",
+        "sendQuery": true,
+        "specifyQuery": "json",
+        "jsonQuery": "={{ JSON.stringify($json.platform === \"DoorDash\" ? { id: $json.store_id, raw: 0 } : { url: $json.store_url, address: $json.request.address, raw: 0 }) }}",
+        "options": {
+          "timeout": 120000
+        }
+      },
+      "id": "236cff62-2484-4d4d-98f0-4d5a53fb28f2",
+      "name": "Fetch Store Menu",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.5,
+      "position": [
+        4560,
+        96
+      ],
+      "credentials": {
+        "httpTemplatedCustomAuth": {
+          "id": "6BR71iuNiCckIW3m",
+          "name": "API.SH API Key (Seongjae S)"
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "// DEMO / MOCK DATA: used only when no live DoorDash or Uber Eats stores could be loaded.\n// Every value below is fictional and is labelled source = \"mock\".\nconst reasons = ($input.first().json.errors) || [];\nfunction row(platform, restaurant, id, item, size, diameter, price, fee, svc, eta, minSubtotal) {\n  return {\n    platform: platform, restaurant: restaurant + ' (MOCK)', restaurant_id: 'mock-' + id,\n    cross_platform_key: restaurant.toLowerCase().replace(/[^a-z0-9]/g, ''),\n    menu_item: item, description: item, category: 'Pizza', size: size, diameter_inches: diameter, slices: null,\n    price: price, delivery_fee: fee, service_fee: svc, minimum_subtotal: minSubtotal,\n    estimated_delivery_minutes: eta, estimated_delivery_min_low: null, item_url: null, restaurant_url: null,\n    offers: [], rating: null, source: 'mock', verified_at: null, fallback_reason: reasons,\n  };\n}\nconst rows = [\n  row('DoorDash', 'Demo Slice House', 'dsh-dd', 'Large Pepperoni Pizza', 'Large', 14, 18.99, 3.99, null, 35, 10),\n  row('DoorDash', 'Demo Slice House', 'dsh-dd', 'Large Cheese Pizza', 'Large', 14, 16.99, 3.99, null, 35, 10),\n  row('DoorDash', 'Demo Slice House', 'dsh-dd', 'Medium Cheese Pizza', 'Medium', 12, 13.99, 3.99, null, 35, 10),\n  row('Uber Eats', 'Demo Slice House', 'dsh-ue', 'Large Pepperoni Pizza', 'Large', 14, 19.49, 2.49, 3.0, 30, null),\n  row('Uber Eats', 'Demo Slice House', 'dsh-ue', 'Large Cheese Pizza', 'Large', 14, 17.49, 2.49, 3.0, 30, null),\n  row('DoorDash', 'Mock Pie Palace', 'mpp-dd', 'XL Pepperoni Pizza', 'Extra Large', 16, 22.99, 0, null, 45, 15),\n  row('DoorDash', 'Mock Pie Palace', 'mpp-dd', 'XL Cheese Pizza', 'Extra Large', 16, 19.99, 0, null, 45, 15),\n  row('DoorDash', 'Mock Pie Palace', 'mpp-dd', 'XL Supreme Pizza', 'Extra Large', 16, 24.99, 0, null, 45, 15),\n  row('Uber Eats', 'Mock Corner Pizzeria', 'mcp-ue', 'Large Pepperoni Pizza', 'Large', 14, 17.5, 4.99, 2.0, 25, null),\n  row('Uber Eats', 'Mock Corner Pizzeria', 'mcp-ue', 'Large Margherita Pizza', 'Large', 14, 16.0, 4.99, 2.0, 25, null),\n  row('Uber Eats', 'Mock Corner Pizzeria', 'mcp-ue', 'Large Veggie Pizza', 'Large', 14, 18.0, 4.99, 2.0, 25, null),\n];\nreturn rows.map(function (r) { return { json: r }; });"
+      },
+      "id": "22341d63-bb3d-460b-90eb-4f17412fa690",
+      "name": "Demo Data Fallback (MOCK)",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        4560,
+        320
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const stores = $('Select Top Pizzerias').all().map(function (i) { return i.json; });\nconst responses = $input.all();\nconst rows = [];\nconst errors = [];\nconst SKIP_KEYS = { raw: 1, reviews: 1, images: 1, hours: 1, delivery_hours: 1, badges: 1 };\nconst NOT_PIZZA = /slice|calzone|sauce|dessert|cookie|brownie|wing|salad|drink|soda|water|juice|garlic|knot|bread|pasta|stromboli|dip|dressing|cheesecake|cannoli|fries|lasagna|sandwich|sub[ ]|pakora|taco|mango lassi|samosa|naan|burger|nugget|popper|mozzarella stick|roll|bites/i;\nconst IS_PIZZA = /(^|[^a-z])(pizzas?|pies?)([^a-z]|$)/i;\n\nfunction collect(node, category, acc) {\n  if (Array.isArray(node)) { node.forEach(function (n) { collect(n, category, acc); }); return; }\n  if (!node || typeof node !== 'object') return;\n  if (Array.isArray(node.items) && typeof node.name === 'string' && typeof node.price !== 'number') {\n    collect(node.items, node.name, acc);\n    return;\n  }\n  if (typeof node.name === 'string' && typeof node.price === 'number') {\n    acc.push({ item: node, category: category });\n    return;\n  }\n  Object.keys(node).forEach(function (k) {\n    if (SKIP_KEYS[k]) return;\n    collect(node[k], category, acc);\n  });\n}\nfunction parseDiameter(text) {\n  const m = text.match(/([0-9]{1,2}(?:[.][0-9])?)[ ]?(?:\"|”|-?inch(?:es)?|in(?![a-z]))/i);\n  if (!m) return null;\n  const d = parseFloat(m[1]);\n  return d >= 6 && d <= 36 ? d : null;\n}\nfunction parseSlices(text) {\n  const m = text.match(/([0-9]{1,2})[ ]?(?:slices|slice|cuts|pieces)/i);\n  if (!m) return null;\n  const n = parseInt(m[1], 10);\n  return n >= 4 && n <= 24 ? n : null;\n}\nfunction parseSize(text) {\n  const t = text.toLowerCase();\n  if (/extra[ -]large|x-large|xl/.test(t)) return 'Extra Large';\n  if (/personal|individual/.test(t)) return 'Personal';\n  if (/small/.test(t)) return 'Small';\n  if (/medium/.test(t)) return 'Medium';\n  if (/large/.test(t)) return 'Large';\n  return null;\n}\nfunction crossKey(name) {\n  return String(name || '').toLowerCase().replace(/[(].*[)]/g, ' ').replace(/pizzeria|pizza|restaurant|the |nyc|[^a-z0-9]/g, '');\n}\n\nresponses.forEach(function (resp, idx) {\n  const j = resp.json || {};\n  const pi = resp.pairedItem && typeof resp.pairedItem.item === 'number' ? resp.pairedItem.item : idx;\n  const meta = stores[pi] || stores[idx];\n  if (!meta) return;\n  if (j.error || j.success === false || (!j.id && !j.name)) {\n    const e = j.error;\n    errors.push(meta.platform + ' menu for ' + meta.restaurant + ': ' + (typeof e === 'string' ? e : (e && (e.message || e.description)) || 'no menu returned'));\n    return;\n  }\n  const found = [];\n  collect(j, null, found);\n  const deliveryFee = typeof j.delivery_fee === 'number' ? j.delivery_fee : meta.search_delivery_fee;\n  const serviceFee = typeof j.service_fee === 'number' ? j.service_fee : meta.search_service_fee;\n  found.forEach(function (f) {\n    const it = f.item;\n    const text = [it.name, it.description].filter(Boolean).join(' ');\n    const realCategory = f.category && f.category !== j.name && f.category !== meta.restaurant ? f.category : '';\n    const looksSized = !!(parseSize(it.name || '') && parseDiameter(text));\n    if (!IS_PIZZA.test(realCategory) && !IS_PIZZA.test(text) && !looksSized) return;\n    if (NOT_PIZZA.test(it.name)) return;\n    if (it.sold_out === true || it.is_sold_out === true || it.available === false) return;\n    if (!(it.price >= 5) || it.price > 300) return;\n    rows.push({\n      platform: meta.platform,\n      restaurant: j.name || meta.restaurant,\n      restaurant_id: String(j.id || meta.store_id),\n      cross_platform_key: crossKey(j.name || meta.restaurant),\n      menu_item: it.name,\n      description: it.description || null,\n      category: realCategory || null,\n      size: parseSize(text),\n      diameter_inches: parseDiameter(text),\n      slices: parseSlices(text),\n      price: it.price,\n      delivery_fee: typeof deliveryFee === 'number' ? deliveryFee : null,\n      service_fee: typeof serviceFee === 'number' ? serviceFee : null,\n      minimum_subtotal: meta.minimum_subtotal,\n      estimated_delivery_minutes: meta.eta_max,\n      estimated_delivery_min_low: meta.eta_min,\n      item_url: null,\n      restaurant_url: j.url || meta.store_url,\n      offers: meta.offers,\n      rating: meta.rating,\n      source: 'live',\n      verified_at: j.fetched_at || null,\n    });\n  });\n});\nif (rows.length === 0) {\n  return [{ json: { no_rows: true, errors: errors } }];\n}\nreturn rows.map(function (r) { return { json: r }; });"
+      },
+      "id": "3c35221c-46a5-42a1-a8d2-a68de8c39181",
+      "name": "Normalize Menus",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        4768,
+        96
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// 실제 API로 받은 메뉴만 30분 저장한다 (MOCK·빈 결과는 저장 안 함)\nconst rows = $input.all().map(function (i) { return i.json; }).filter(function (r) { return r.menu_item && r.source === 'live'; });\nif (rows.length === 0) return [];\nconst key = $('Make Cache Key').first().json;\nconst TTL_MS = 30 * 60 * 1000;\nconst stores = {};\nrows.forEach(function (r) { stores[r.platform + '|' + r.restaurant_id] = 1; });\nreturn [{ json: {\n  cache_key: key.cache_key, address: key.request.address, food_type: 'pizza',\n  rows_json: JSON.stringify(rows), row_count: rows.length, store_count: Object.keys(stores).length,\n  expires_at_ms: Date.now() + TTL_MS, fetched_at: new Date().toISOString(),\n} }];\n"
+      },
+      "id": "c1fae59b-4b8e-4496-9607-af2f0c0bf34f",
+      "name": "Build Cache Row",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        4992,
+        -32
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "upsert",
+        "dataTableId": {
+          "__rl": true,
+          "mode": "name",
+          "value": "food_menu_cache"
+        },
+        "matchType": "allConditions",
+        "filters": {
+          "conditions": [
+            {
+              "keyName": "cache_key",
+              "keyValue": "={{ $json.cache_key }}"
+            }
+          ]
+        },
+        "columns": {
+          "mappingMode": "autoMapInputData",
+          "value": {},
+          "matchingColumns": [],
+          "schema": []
+        },
+        "options": {}
+      },
+      "id": "7643317a-6329-48bd-9096-c8ff8beb289e",
+      "name": "Save Menu Cache",
+      "type": "n8n-nodes-base.dataTable",
+      "typeVersion": 1.1,
+      "position": [
+        5216,
+        -32
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const req = $('Core Request').first().json.request;\nconst all = $input.all().map(function (i) { return i.json; });\nconst warnings = [];\nconst isMock = all.some(function (r) { return r.source === 'mock'; });\nlet rows = all.filter(function (r) { return r.menu_item && typeof r.price === 'number'; });\nif (rows.length === 0) {\n  const errs = all.reduce(function (a, r) { return a.concat(r.errors || []); }, []);\n  return [{ json: { request: req, options: [], mock: false, no_rows: true, warnings: errs } }];\n}\nif (isMock) {\n  const reasons = rows[0].fallback_reason || [];\n  warnings.push('Live API.SH data was unavailable, so these results use fictional MOCK demo data. ' + (reasons.length ? 'Reason: ' + reasons.slice(0, 3).join(' | ') : ''));\n}\n\n// ---- dietary filtering (best effort, menu text only) ----\nconst diet = req.dietary_restrictions || [];\nconst meat = /pepperoni|sausage|bacon|ham|meat|chicken|beef|salami|anchov|prosciutto|pork|meatball/i;\nconst wantsVeg = diet.some(function (d) { return /vegetarian|vegan/.test(d); });\nconst wantsGF = diet.some(function (d) { return /gluten/.test(d); });\nfunction textOf(r) { return [r.menu_item, r.description].filter(Boolean).join(' '); }\nif (wantsVeg) rows = rows.filter(function (r) { return !meat.test(textOf(r)); });\nif (wantsGF) rows = rows.filter(function (r) { return /gluten[- ]free/i.test(textOf(r)); });\nif (diet.length) warnings.push('Dietary restrictions (' + diet.join(', ') + ') were matched against menu names and descriptions only. Confirm with the restaurant before ordering.');\nif (rows.length === 0) {\n  return [{ json: { request: req, options: [], mock: isMock, no_rows: true, warnings: warnings.concat(['No menu items matched the dietary restrictions.']) } }];\n}\n\n// ---- quantity model ----\nconst AREA_PER_PERSON = 48; // sq in, about 2.5 slices of a 14 inch pizza\nconst SLICES_PER_PERSON = 2.5;\nconst ASSUMED_DIAMETER = { 'Personal': 8, 'Small': 10, 'Medium': 12, 'Large': 14, 'Extra Large': 16 };\nfunction servingsOf(r) {\n  if (r.diameter_inches) {\n    const area = Math.PI * Math.pow(r.diameter_inches / 2, 2);\n    return { area: area, servings: area / AREA_PER_PERSON, uncertain: false };\n  }\n  if (r.slices) return { area: null, servings: r.slices / SLICES_PER_PERSON, uncertain: false };\n  const d = ASSUMED_DIAMETER[r.size] || 14;\n  const area = Math.PI * Math.pow(d / 2, 2);\n  return { area: area, servings: area / AREA_PER_PERSON, uncertain: true };\n}\nconst prefs = req.preferences || [];\nfunction prefMatch(r) {\n  if (prefs.length === 0) return 0;\n  const t = textOf(r).toLowerCase();\n  return prefs.some(function (p) { return t.indexOf(p) !== -1; }) ? 1 : 0;\n}\nconst need = req.party_size;\nconst budget = req.budget_usd;\nconst maxMinutes = (function () {\n  const m = String(req.desired_delivery_time || '').match(/([0-9]+)[ ]*min/i);\n  return m ? parseInt(m[1], 10) : null;\n})();\n\n// ---- group by restaurant + platform ----\nconst groups = {};\nrows.forEach(function (r) {\n  const k = r.platform + '|' + r.restaurant_id;\n  if (!groups[k]) groups[k] = [];\n  groups[k].push(r);\n});\n\nconst candidates = [];\nObject.keys(groups).forEach(function (k) {\n  const g = groups[k];\n  const seen = {};\n  const items = [];\n  g.forEach(function (r) {\n    const key = r.menu_item + '|' + r.price;\n    if (seen[key]) return;\n    seen[key] = 1;\n    const s = servingsOf(r);\n    items.push({ r: r, servings: s.servings, area: s.area, uncertain: s.uncertain, pref: prefMatch(r), ppp: r.price / s.servings });\n  });\n  const byValue = items.slice().sort(function (a, b) { return a.ppp - b.ppp; });\n  const pick = byValue.slice(0, 6);\n  byValue.filter(function (i) { return i.pref && pick.indexOf(i) === -1; }).slice(0, 3).forEach(function (i) { pick.push(i); });\n  if (pick.length === 0) return;\n  const first = g[0];\n  const minServ = Math.min.apply(null, pick.map(function (i) { return i.servings; }));\n  const maxCount = Math.min(12, Math.ceil(need / Math.max(minServ, 0.5)) + 1);\n  const best = {};\n  const top = [];\n  let visited = 0;\n  function consider(counts) {\n    let servings = 0, subtotal = 0, n = 0, prefCount = 0, distinct = 0, uncertain = false, minUsed = Infinity, uncCount = 0;\n    counts.forEach(function (c, idx) {\n      if (!c) return;\n      const it = pick[idx];\n      servings += c * it.servings; subtotal += c * it.r.price; n += c; distinct += 1;\n      prefCount += c * it.pref; if (it.uncertain) { uncertain = true; uncCount += c; } if (it.servings < minUsed) minUsed = it.servings;\n    });\n    if (n === 0 || servings < need) return;\n    if (servings - minUsed >= need) return; // 남는 판 금지: 아무 한 판을 빼도 충분하면 너무 많이 시킨 것\n    if (typeof first.minimum_subtotal === 'number' && subtotal < first.minimum_subtotal) return;\n    const df = typeof first.delivery_fee === 'number' ? first.delivery_fee : 0;\n    const sf = typeof first.service_fee === 'number' ? first.service_fee : 0;\n    const total = subtotal + df + sf;\n    const coverage = servings / need;\n    const prefScore = prefs.length ? prefCount / n : 1;\n    const eta = typeof first.estimated_delivery_minutes === 'number' ? first.estimated_delivery_minutes : null;\n    const valueScore = total * (1 + 0.25 * (1 - prefScore)) * (1 + 0.5 * Math.max(0, coverage - 1.35)) * (uncertain ? 1.05 : 1) * (1 + (eta === null ? 0.05 : eta / 600));\n    const rating = typeof first.rating === 'number' ? first.rating : 4;\n    const etaPenalty = eta === null ? 0.03 : Math.min(0.1, Math.max(0, eta - 35) / 500); // 35분 넘으면 조금씩, 85분에 최대\n    const quality = 0.45 * (rating / 5) + 0.4 * prefScore + 0.15 * Math.min(distinct, 3) / 3\n      - 0.15 * (uncCount / n) - etaPenalty; // 추천 점수: 크기 모르는 피자 비율·느린 배달은 감점\n    const cand = {\n      quality: quality, rating: rating,\n      counts: counts.slice(), servings: servings, subtotal: subtotal, total: total, coverage: coverage, pref_score: prefScore,\n      distinct: distinct, pizza_count: n, uncertain: uncertain, value_score: valueScore, eta: eta, group: k,\n    };\n    const sig = k + '|' + counts.join(',');\n    cand.sig = sig;\n    if (!best.cheapest || total < best.cheapest.total) best.cheapest = cand;\n    if (total <= budget) { // 가게마다 예산 안 추천 점수 상위 3개를 기억\n      top.push(cand);\n      top.sort(function (a, b) { return b.quality - a.quality || a.total - b.total; });\n      if (top.length > 3) top.pop();\n    }\n  }\n  function walk(idx, left, counts) {\n    if (visited > 60000) return;\n    if (idx === pick.length) { visited++; consider(counts); return; }\n    for (let c = 0; c <= left; c++) {\n      counts[idx] = c;\n      walk(idx + 1, left - c, counts);\n    }\n    counts[idx] = 0;\n  }\n  walk(0, maxCount, pick.map(function () { return 0; }));\n  const uniq = {};\n  top.concat(best.cheapest ? [best.cheapest] : []).forEach(function (c) {\n    if (uniq[c.sig]) return;\n    uniq[c.sig] = c; c.pick = pick; c.first = first;\n    candidates.push(c);\n  });\n});\n\nif (candidates.length === 0) {\n  warnings.push('No combination from a single restaurant could cover ' + need + ' people with the available menu items and minimum order rules.');\n  return [{ json: { request: req, options: [], mock: isMock, no_rows: false, warnings: warnings } }];\n}\n\nconst inBudget = candidates.filter(function (c) { return c.total <= budget; });\nconst overBudget = inBudget.length === 0;\nif (overBudget) warnings.push('No option fits the $' + budget.toFixed(2) + ' budget. Showing the closest options, which exceed it.');\nconst pool = overBudget ? candidates : inBudget;\nconst cheapestAll = candidates.reduce(function (m, c) { return !m || c.total < m.total ? c : m; }, null);\nconst budgetShortfall = overBudget && cheapestAll ? { cheapest_total: Math.round(cheapestAll.total * 100) / 100, cheapest_per_person: Math.round((cheapestAll.total / need) * 100) / 100 } : null;\n\nconst chosen = [];\nfunction takeFirst(sorted, avoidRestaurants) {\n  for (let i = 0; i < sorted.length; i++) {\n    const c = sorted[i];\n    if (chosen.some(function (x) { return x.sig === c.sig; })) continue;\n    if (avoidRestaurants && chosen.some(function (x) { return x.group === c.group || x.first.cross_platform_key === c.first.cross_platform_key; })) continue;\n    return c;\n  }\n  return null;\n}\n// 추천 점수 순으로 3개, 가능하면 서로 다른 가게. 예산 안이 없으면 예산에 가장 가까운(싼) 순\nconst ranked = overBudget\n  ? pool.slice().sort(function (a, b) { return a.total - b.total; })\n  : pool.slice().sort(function (a, b) { return b.quality - a.quality || a.total - b.total; });\nconst NAMES = overBudget ? ['Closest to Budget', 'Next Closest', 'Also Close'] : ['Top Pick', 'Runner-up', 'Also Recommended'];\nconst labelled = [];\nfor (let i = 0; i < 3; i++) {\n  const c = takeFirst(ranked, true) || takeFirst(ranked, false);\n  if (!c) break;\n  chosen.push(c); labelled.push({ label: NAMES[i], c: c });\n}\nconst cheapestShown = labelled.reduce(function (m, l) { return !m || l.c.total < m.total ? l.c : m; }, null);\n\nfunction bestOtherPlatform(c) {\n  const key = c.first.cross_platform_key;\n  let found = null;\n  candidates.forEach(function (o) {\n    if (o.first.platform === c.first.platform || o.first.cross_platform_key !== key) return;\n    if (!found || o.total < found.total) found = o;\n  });\n  return found;\n}\n\nconst options = labelled.map(function (l, idx) {\n  const c = l.c;\n  const f = c.first;\n  const lines = [];\n  c.counts.forEach(function (n, i) {\n    if (!n) return;\n    const it = c.pick[i];\n    lines.push({ qty: n, item: it.r.menu_item, size: it.r.size, diameter_inches: it.r.diameter_inches, unit_price: it.r.price, quantity_uncertain: it.uncertain });\n  });\n  const other = bestOtherPlatform(c);\n  const reasons = [];\n  if (!overBudget) reasons.push('Restaurant rating ' + c.rating + ', ' + c.distinct + (c.distinct > 1 ? ' kinds' : ' kind') + ' of pizza, fits the budget');\n  else reasons.push('Closest to your budget among feasible orders');\n  if (prefs.length) reasons.push(Math.round(c.pref_score * 100) + '% of pizzas match: ' + prefs.join(', '));\n  if (c.uncertain) reasons.push('Quantity is an estimate because at least one pizza has no diameter or slice count');\n  if (maxMinutes !== null && c.eta !== null && c.eta > maxMinutes) reasons.push('Advertised delivery may be slower than your requested ' + maxMinutes + ' minutes');\n  if (labelled.length > 1 && c === cheapestShown) reasons.push('Lowest price of these options');\n  return {\n    rank: idx + 1,\n    label: l.label,\n    platform: f.platform,\n    restaurant: f.restaurant,\n    restaurant_id: f.restaurant_id,\n    restaurant_url: f.restaurant_url || null,\n    source: f.source,\n    order: lines,\n    pizza_count: c.pizza_count,\n    food_subtotal: Math.round(c.subtotal * 100) / 100,\n    delivery_fee: typeof f.delivery_fee === 'number' ? f.delivery_fee : null,\n    other_known_fees: typeof f.service_fee === 'number' ? f.service_fee : 0,\n    other_known_fees_label: typeof f.service_fee === 'number' ? 'Service fee advertised by ' + f.platform : null,\n    estimated_total: Math.round(c.total * 100) / 100,\n    cost_per_person: Math.round((c.total / need) * 100) / 100,\n    estimated_delivery_minutes: c.eta,\n    estimated_servings: Math.round(c.servings * 10) / 10,\n    coverage_ratio: Math.round(c.coverage * 100) / 100,\n    quantity_uncertain: c.uncertain,\n    within_budget: c.total <= budget,\n    total_is_incomplete: typeof f.delivery_fee !== 'number',\n    advertised_offers: f.offers || [],\n    same_restaurant_other_platform: other ? { platform: other.first.platform, estimated_total: Math.round(other.total * 100) / 100 } : null,\n    reason: reasons.join('. '),\n  };\n});\n\nreturn [{ json: { request: req, options: options, mock: isMock, no_rows: false, budget_shortfall: budgetShortfall, stats: { restaurants: Object.keys(groups).length, menu_items: rows.length, combos: candidates.length, within_budget: inBudget.length, need_sq_in: Math.round(need * AREA_PER_PERSON) }, assumption: 'About ' + SLICES_PER_PERSON + ' slices of a 14 inch pizza (about ' + AREA_PER_PERSON + ' sq in of pizza) per person', warnings: warnings } }];"
+      },
+      "id": "db97765b-acf1-4abd-8947-22da520ccd05",
+      "name": "Optimize Orders",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        5216,
+        224
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const LF = String.fromCharCode(10);\nconst d = $input.first().json;\nconst req = d.request;\nfunction money(n) { return '$' + Number(n).toFixed(2); }\nconst out = [];\nconst letters0 = ['A', 'B', 'C'];\nif (d.budget_shortfall) out.push('**Heads up: a budget of ' + money(req.budget_usd) + ' cannot feed ' + req.party_size + ' people. The cheapest real order is about ' + money(d.budget_shortfall.cheapest_total) + ' (' + money(d.budget_shortfall.cheapest_per_person) + ' per person). Below are the options closest to your budget.**' + LF);\nif (d.mock) out.push('**DEMO MODE: the restaurants and prices below are fictional MOCK data, not real menus.**' + LF);\nout.push('**Pizza for ' + req.party_size + ' people, budget ' + money(req.budget_usd) + '**');\nout.push('Delivery to: ' + req.address + (req.preferences.length ? ' | Preferences: ' + req.preferences.join(', ') : '') + (req.dietary_restrictions.length ? ' | Dietary: ' + req.dietary_restrictions.join(', ') : '') + (req.desired_delivery_time ? ' | Wanted delivery: ' + req.desired_delivery_time : ''));\nout.push('');\nif (d.options && d.options.length && d.stats) {\n  const s = d.stats;\n  out.push('**How I decided**');\n  out.push('1. Searched DoorDash and Uber Eats for open pizza places near the address and shortlisted the top rated ones. Checked ' + s.restaurants + ' restaurants and ' + s.menu_items + ' pizza menu items.');\n  out.push('2. Sizing: ' + d.assumption + '. For ' + req.party_size + ' people that is about ' + s.need_sq_in + ' sq in of pizza. Each order covers at least that, with no extra pizza beyond what is needed.');\n  out.push('3. Budget: each order uses one restaurant only. I built ' + s.combos + ' candidate orders; ' + s.within_budget + ' fit within ' + money(req.budget_usd) + ' (food + delivery fee when known, no taxes or tips).');\n  out.push('4. Ranking: orders within budget are ranked by restaurant rating, how well the pizzas match your preferences, and a little variety. The top three, from different restaurants when possible, are shown.');\n  out.push('');\n  out.push('**Summary**');\n  d.options.forEach(function (o, i) {\n    out.push('- ' + letters0[i] + ' ' + o.label + ': ' + o.restaurant + ' (' + o.platform + '), about ' + money(o.estimated_total) + ', ' + money(o.cost_per_person) + ' per person' + (o.estimated_delivery_minutes === null ? '' : ', ' + o.estimated_delivery_minutes + ' min'));\n  });\n  out.push('');\n}\nif (!d.options || d.options.length === 0) {\n  out.push('I could not build a pizza order for this request.');\n  (d.warnings || []).slice(0, 6).forEach(function (w) { out.push('- ' + w); });\n  return [{ json: { output: out.join(LF) } }];\n}\nconst letters = ['A', 'B', 'C'];\nd.options.forEach(function (o, i) {\n  out.push('**Option ' + letters[i] + ': ' + o.label + '**');\n  out.push('- Restaurant: ' + o.restaurant);\n  out.push('- Platform: ' + o.platform);\n  out.push('- Order: ' + o.order.map(function (l) {\n    const size = l.diameter_inches ? ' (' + l.diameter_inches + ' in)' : (l.size ? ' (' + l.size + ', size not confirmed)' : '');\n    return l.qty + ' x ' + l.item + size + ' at ' + money(l.unit_price);\n  }).join('; '));\n  out.push('- Food subtotal: ' + money(o.food_subtotal));\n  out.push('- Delivery fee: ' + (o.delivery_fee === null ? 'not available from the API (not included)' : money(o.delivery_fee)));\n  out.push('- Other known fees: ' + (o.other_known_fees > 0 ? money(o.other_known_fees) + ' (' + o.other_known_fees_label + ')' : 'none reported'));\n  out.push('- Unknown taxes and service fees: not included (taxes are not provided by the API' + (o.platform === 'DoorDash' ? '; DoorDash service fees are not exposed' : '') + ')');\n  out.push('- Estimated total: ' + money(o.estimated_total) + (o.total_is_incomplete ? ' (incomplete, delivery fee unknown)' : '') + (o.within_budget ? '' : ' (over budget)'));\n  out.push('- Cost per person: ' + money(o.cost_per_person));\n  out.push('- Estimated delivery: ' + (o.estimated_delivery_minutes === null ? 'not available' : o.estimated_delivery_minutes + ' minutes (advertised)'));\n  out.push('- Estimated servings: ' + o.estimated_servings + ' for ' + req.party_size + ' people' + (o.quantity_uncertain ? ' (uncertain)' : ''));\n  if (o.advertised_offers && o.advertised_offers.length) out.push('- Advertised offers (not applied): ' + o.advertised_offers.join(', '));\n  if (o.same_restaurant_other_platform) out.push('- Same restaurant on ' + o.same_restaurant_other_platform.platform + ': about ' + money(o.same_restaurant_other_platform.estimated_total) + ' for its best matching order');\n  out.push('- Why: ' + o.reason);\n  out.push('- Link: ' + (o.restaurant_url || 'not available'));\n  out.push('');\n});\nout.push('**Notes**');\nout.push('- Quantity assumption: ' + d.assumption + '.');\nout.push('- Estimates exclude tips, taxes, personal promotions, DashPass and Uber One benefits. They are not checkout prices; confirm the final total in the app.');\n(d.warnings || []).forEach(function (w) { out.push('- ' + w); });\nout.push('- I never place orders or take payment. Use the links to order yourself.');\nreturn [{ json: { output: out.join(LF) } }];"
+      },
+      "id": "63862c01-f0ea-42a9-9e61-9aecede8b872",
+      "name": "Format Recommendations",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        5648,
+        320
+      ]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "942534e9-db02-4a11-b6ec-557105634efa",
+              "name": "output",
+              "value": "={{ $json.output }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "93cd37fc-23a6-4d3b-92bd-b160778e0f0e",
+      "name": "Chat Reply",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        5872,
+        320
+      ]
+    },
+    {
+      "parameters": {},
+      "id": "ff773307-b20c-4147-8871-3897aad2135c",
+      "name": "Setup: Run Once",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        1696,
+        -592
+      ]
+    },
+    {
+      "parameters": {
+        "resource": "table",
+        "operation": "create",
+        "tableName": "food_menu_cache",
+        "columns": {
+          "column": [
+            {
+              "name": "cache_key"
+            },
+            {
+              "name": "address"
+            },
+            {
+              "name": "food_type"
+            },
+            {
+              "name": "rows_json"
+            },
+            {
+              "name": "row_count",
+              "type": "number"
+            },
+            {
+              "name": "store_count",
+              "type": "number"
+            },
+            {
+              "name": "expires_at_ms",
+              "type": "number"
+            },
+            {
+              "name": "fetched_at"
+            }
+          ]
+        },
+        "options": {
+          "createIfNotExists": true
+        }
+      },
+      "id": "6682c9a0-43e5-4599-8793-f6ba5c75775d",
+      "name": "Create food_menu_cache",
+      "type": "n8n-nodes-base.dataTable",
+      "typeVersion": 1.1,
+      "position": [
+        1920,
+        -592
+      ]
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "OpenAI Chat Model": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Extract Pizza Request",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Conversation Memory": {
+      "ai_memory": [
+        [
+          {
+            "node": "Extract Pizza Request",
+            "type": "ai_memory",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Request Schema": {
+      "ai_outputParser": [
+        [
+          {
+            "node": "Extract Pizza Request",
+            "type": "ai_outputParser",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Chat Trigger": {
+      "main": [
+        [
+          {
+            "node": "Extract Pizza Request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract Pizza Request": {
+      "main": [
+        [
+          {
+            "node": "Validate Request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validate Request": {
+      "main": [
+        [
+          {
+            "node": "Request Complete?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Request Complete?": {
+      "main": [
+        [
+          {
+            "node": "Core Request",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Ask For Missing Details",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Core Request": {
+      "main": [
+        [
+          {
+            "node": "Make Cache Key",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Make Cache Key": {
+      "main": [
+        [
+          {
+            "node": "Lookup Menu Cache",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Lookup Menu Cache": {
+      "main": [
+        [
+          {
+            "node": "Cache Hit?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Cache Hit?": {
+      "main": [
+        [
+          {
+            "node": "Use Cached Menus",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Search DoorDash",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Search Uber Eats",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Search DoorDash": {
+      "main": [
+        [
+          {
+            "node": "Combine Search Results",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Search Uber Eats": {
+      "main": [
+        [
+          {
+            "node": "Combine Search Results",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Combine Search Results": {
+      "main": [
+        [
+          {
+            "node": "Select Top Pizzerias",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Select Top Pizzerias": {
+      "main": [
+        [
+          {
+            "node": "Live Stores Found?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Live Stores Found?": {
+      "main": [
+        [
+          {
+            "node": "Fetch Store Menu",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Demo Data Fallback (MOCK)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Store Menu": {
+      "main": [
+        [
+          {
+            "node": "Normalize Menus",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalize Menus": {
+      "main": [
+        [
+          {
+            "node": "Build Cache Row",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Optimize Orders",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Cache Row": {
+      "main": [
+        [
+          {
+            "node": "Save Menu Cache",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Use Cached Menus": {
+      "main": [
+        [
+          {
+            "node": "Optimize Orders",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Demo Data Fallback (MOCK)": {
+      "main": [
+        [
+          {
+            "node": "Optimize Orders",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Optimize Orders": {
+      "main": [
+        [
+          {
+            "node": "Format Recommendations",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format Recommendations": {
+      "main": [
+        [
+          {
+            "node": "Chat Reply",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Setup: Run Once": {
+      "main": [
+        [
+          {
+            "node": "Create food_menu_cache",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate"
+  },
+  "versionId": "679c442e-548f-4883-a384-f92e9ff661b1",
+  "meta": {
+    "instanceId": "8d42ba45946604b684bbf1e9f724e5af7cd55ac9c441b3aeae795aa7105e1ad6"
+  },
+  "nodeGroups": [],
+  "id": "l75zt5CYWgKOwqUs",
+  "tags": []
+}
