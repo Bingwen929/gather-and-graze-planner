@@ -9,16 +9,16 @@ export const CUISINES = [
   { value: "sandwiches", label: "Sandwiches & subs" },
 ] as const;
 
-export const DIETS = [
-  "Vegetarian",
-  "Vegan",
-  "Gluten-free",
-  "Halal",
-  "Dairy-free",
-  "Nut allergy",
-] as const;
-
 export type Cuisine = (typeof CUISINES)[number]["value"];
+
+/** Guidance from n8n's Validate Request step; optional budgets stay optional. */
+export function minimumPlannerBudget(cuisine: Cuisine | undefined, guests: number): number | null {
+  if (!cuisine || !Number.isFinite(guests) || guests < 1) return null;
+  const foodPerPerson: Record<Cuisine, number> = {
+    pizza: 4, burgers: 6, tacos: 5, sushi: 8, sandwiches: 6,
+  };
+  return Math.ceil((foodPerPerson[cuisine] * guests * 1.35 + 4) / 5) * 5;
+}
 
 const todayISO = () => {
   const d = new Date();
@@ -34,8 +34,6 @@ export const eventPlanSchema = z
       .int("Use a whole number")
       .min(1, "At least 1 person")
       .max(2000, "That's a lot — 2,000 people max"),
-    dietaryCount: z.coerce.number().int("Use a whole number").min(0, "Can't be negative"),
-    diets: z.array(z.string().max(40)).max(10).default([]),
     cuisine: z.enum(["pizza", "burgers", "tacos", "sushi", "sandwiches"]).optional(),
     date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Pick the event date"),
     time: z.string().regex(/^\d{2}:\d{2}$/, "Pick a start time"),
@@ -51,13 +49,6 @@ export const eventPlanSchema = z
       .max(200, "Keep the address under 200 characters"),
   })
   .superRefine((v, ctx) => {
-    if (v.dietaryCount > v.guests) {
-      ctx.addIssue({
-        code: "custom",
-        path: ["dietaryCount"],
-        message: "Can't be more than the total guests",
-      });
-    }
     if (v.date < todayISO()) {
       ctx.addIssue({ code: "custom", path: ["date"], message: "Pick today or a future date" });
     }
@@ -86,13 +77,6 @@ export function buildPlannerMessage(plan: EventPlan): string {
     `The event is on ${formatWhen(plan.date, plan.time)}; the food should arrive by then.`,
   ];
 
-  if (plan.dietaryCount > 0) {
-    const kinds = plan.diets.length ? ` (${plan.diets.join(", ").toLowerCase()})` : "";
-    parts.push(`${plan.dietaryCount} of the guests have dietary restrictions${kinds}.`);
-  } else {
-    parts.push("No guests have dietary restrictions.");
-  }
-
   parts.push(
     cuisine
       ? `Preferred food: ${cuisine.label.toLowerCase()}.`
@@ -110,7 +94,7 @@ export function buildPlannerMessage(plan: EventPlan): string {
 
 /** Split the workflow's markdown reply into an intro and bold-titled sections. */
 export function splitPlannerReply(text: string) {
-  const lines = text.split(/\r?\n/);
+  const lines = text.replace(/^\s*\*\*DEMO MODE:[^\n]*\*\*\s*/i, "").split(/\r?\n/);
   const intro: string[] = [];
   const sections: { title: string; body: string[] }[] = [];
   for (const line of lines) {

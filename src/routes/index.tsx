@@ -8,7 +8,7 @@ import { Input } from "@/components/ui/input";
 import { Chip } from "@/components/planner/chip";
 import { Field } from "@/components/planner/field";
 import { NumberStepper } from "@/components/planner/number-stepper";
-import { CUISINES, DIETS, eventPlanSchema, type Cuisine } from "@/lib/event-plan";
+import { CUISINES, eventPlanSchema, minimumPlannerBudget, type Cuisine } from "@/lib/event-plan";
 
 export const Route = createFileRoute("/")({
   head: () => ({
@@ -17,13 +17,13 @@ export const Route = createFileRoute("/")({
       {
         name: "description",
         content:
-          "Tell us your headcount, dietary needs, date and budget. Spread compares DoorDash and Uber Eats to find the best food for your event.",
+          "Tell us your headcount, cuisine, date and budget. Spread compares DoorDash and Uber Eats to find the best food for your event.",
       },
       { property: "og:title", content: "Spread — Food sourcing for your next event" },
       {
         property: "og:description",
         content:
-          "Headcount, dietary needs, date and budget in — the best group food order out.",
+          "Headcount, cuisine, date and budget in — the best group food order out.",
       },
       { property: "og:type", content: "website" },
       { name: "twitter:card", content: "summary_large_image" },
@@ -32,14 +32,12 @@ export const Route = createFileRoute("/")({
   component: Index,
 });
 
-type FieldKey = "guests" | "dietaryCount" | "date" | "time" | "budget" | "address";
+type FieldKey = "guests" | "date" | "time" | "budget" | "address";
 type Errors = Partial<Record<FieldKey, string>>;
 
 function Index() {
   const navigate = useNavigate();
   const [guests, setGuests] = useState("25");
-  const [dietaryCount, setDietaryCount] = useState("0");
-  const [diets, setDiets] = useState<string[]>([]);
   const [cuisine, setCuisine] = useState<Cuisine | undefined>(undefined);
   const [date, setDate] = useState("");
   const [time, setTime] = useState("18:00");
@@ -49,13 +47,12 @@ function Index() {
 
   const perPerson =
     Number(budget) > 0 && Number(guests) > 0 ? Number(budget) / Number(guests) : null;
+  const minimumBudget = minimumPlannerBudget(cuisine, Number(guests));
 
   function onSubmit(e: FormEvent) {
     e.preventDefault();
     const result = eventPlanSchema.safeParse({
       guests,
-      dietaryCount: dietaryCount || 0,
-      diets: Number(dietaryCount) > 0 ? diets : [],
       cuisine,
       date,
       time,
@@ -78,8 +75,6 @@ function Index() {
       search: {
         sid: crypto.randomUUID(),
         guests: p.guests,
-        dietaryCount: p.dietaryCount,
-        diets: p.diets.length ? p.diets.join(",") : undefined,
         cuisine: p.cuisine,
         date: p.date,
         time: p.time,
@@ -115,7 +110,7 @@ function Index() {
           />
           <div className="absolute inset-0 bg-gradient-fade" />
           <figcaption className="absolute inset-x-5 bottom-5 flex flex-wrap gap-2">
-            {["Sized to your headcount", "Respects dietary needs", "Stays on budget"].map((t) => (
+            {["Sized to your headcount", "Menus compared", "Estimated all-in prices"].map((t) => (
               <span
                 key={t}
                 className="rounded-full bg-card/90 px-3 py-1.5 text-xs font-semibold text-foreground backdrop-blur"
@@ -171,48 +166,7 @@ function Index() {
             />
           </Field>
 
-          <Field
-            index="02"
-            title="How many have dietary restrictions?"
-            htmlFor="dietaryCount"
-            hint="Enter 0 if nobody does."
-            error={errors.dietaryCount}
-          >
-            <NumberStepper
-              id="dietaryCount"
-              value={dietaryCount}
-              onChange={setDietaryCount}
-              min={0}
-              unit="guests"
-              invalid={!!errors.dietaryCount}
-            />
-            {Number(dietaryCount) > 0 && (
-              <div className="grid gap-2 animate-rise">
-                <span className="text-sm text-muted-foreground">
-                  Which kinds? <span className="italic">(optional)</span>
-                </span>
-                <div className="flex flex-wrap gap-2">
-                  {DIETS.map((d) => {
-                    const on = diets.includes(d);
-                    return (
-                      <Chip
-                        key={d}
-                        tone="olive"
-                        on={on}
-                        onClick={() =>
-                          setDiets((prev) => (on ? prev.filter((x) => x !== d) : [...prev, d]))
-                        }
-                      >
-                        {d}
-                      </Chip>
-                    );
-                  })}
-                </div>
-              </div>
-            )}
-          </Field>
-
-          <Field index="03" title="Preferred cuisine" optional>
+          <Field index="02" title="Preferred cuisine" optional>
             <div className="flex flex-wrap gap-2" role="group" aria-label="Preferred cuisine">
               <Chip on={cuisine === undefined} onClick={() => setCuisine(undefined)}>
                 Not sure yet
@@ -226,7 +180,7 @@ function Index() {
           </Field>
 
           <Field
-            index="04"
+            index="03"
             title="When is the event?"
             htmlFor="date"
             error={errors.date ?? errors.time}
@@ -253,7 +207,7 @@ function Index() {
           </Field>
 
           <Field
-            index="05"
+            index="04"
             title="Ideal total budget"
             optional
             htmlFor="budget"
@@ -276,10 +230,18 @@ function Index() {
                 per person
               </p>
             )}
+            {minimumBudget !== null && (
+              <p className="text-sm text-muted-foreground">
+                Suggested minimum: ${minimumBudget.toLocaleString()} including estimated fees, tax and tip.
+                {Number(budget) > 0 && Number(budget) < minimumBudget
+                  ? " The planner will ask for a higher budget before searching."
+                  : ""}
+              </p>
+            )}
           </Field>
 
           <Field
-            index="06"
+            index="05"
             title="Where should the food go?"
             htmlFor="address"
             hint="A street address or ZIP code, so we can find restaurants that deliver."

@@ -31,5 +31,6 @@ use the editor.
 
 ## Project rules
 
-- The event form talks to the n8n "AI Pizza Order Optimizer" workflow through its public chat trigger (`src/lib/planner.functions.ts`), called server-side via the connector gateway — the workflow is conversational, so the results page keeps one sessionId and lets users answer follow-up questions.
+- The event form talks to the n8n "AI Pizza Order Optimizer" workflow through its published API webhook (`src/lib/planner.functions.ts`), called server-side via the connector gateway with message and one sessionId — this preserves follow-up context and returns explicit fictional-data metadata.
 - Form validation and the plain-language message sent to n8n live in `src/lib/event-plan.ts` and are covered by `src/test/event-plan.test.ts` — keep rules in one shared module so the landing and results pages agree.
+- Decode webhook responses in the browser-safe `src/lib/planner-response.ts` and test it independently — malformed results must not display as successful plans and fictional data must remain identifiable.

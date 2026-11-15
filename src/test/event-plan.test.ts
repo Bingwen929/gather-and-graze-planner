@@ -10,8 +10,6 @@ const future = (() => {
 
 const base = {
   guests: 20,
-  dietaryCount: 3,
-  diets: [],
   date: future,
   time: "18:00",
   address: "500 El Camino Real, Santa Clara, CA 95053",
@@ -22,9 +20,12 @@ describe("event plan rules", () => {
     expect(eventPlanSchema.safeParse(base).success).toBe(true);
   });
 
-  it("rejects more dietary-restricted guests than total guests", () => {
-    const r = eventPlanSchema.safeParse({ ...base, dietaryCount: 21 });
-    expect(r.success).toBe(false);
+  it("ignores legacy dietary fields and excludes them from the planner request", () => {
+    const plan = eventPlanSchema.parse({ ...base, dietaryCount: 3, diets: ["Vegetarian"] });
+    expect(plan).not.toHaveProperty("dietaryCount");
+    expect(plan).not.toHaveProperty("diets");
+    const message = buildPlannerMessage(plan);
+    expect(message).not.toMatch(/dietary|vegetarian/i);
   });
 
   it("requires the event date and time", () => {
@@ -35,7 +36,6 @@ describe("event plan rules", () => {
   it("tells the planner when cuisine and budget are unknown", () => {
     const msg = buildPlannerMessage(eventPlanSchema.parse(base));
     expect(msg).toContain("20 people");
-    expect(msg).toContain("3 of the guests have dietary restrictions");
     expect(msg).toContain("not sure which food");
     expect(msg).toContain("not sure about the budget");
   });

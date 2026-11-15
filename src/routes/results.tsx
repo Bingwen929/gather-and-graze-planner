@@ -15,8 +15,6 @@ import { buildPlannerMessage, CUISINES, eventPlanSchema } from "@/lib/event-plan
 const searchSchema = z.object({
   sid: z.string().optional(),
   guests: z.coerce.number().optional(),
-  dietaryCount: z.coerce.number().optional(),
-  diets: z.string().optional(),
   cuisine: z.string().optional(),
   date: z.string().optional(),
   time: z.string().optional(),
@@ -61,8 +59,6 @@ function Results() {
     () =>
       eventPlanSchema.safeParse({
         guests: search.guests,
-        dietaryCount: search.dietaryCount ?? 0,
-        diets: search.diets ? search.diets.split(",").filter(Boolean) : [],
         cuisine: search.cuisine,
         date: search.date,
         time: search.time,
@@ -146,10 +142,9 @@ function Results() {
         <h1 className="text-4xl font-medium sm:text-5xl">
           Food for <em className="italic text-primary">{plan.guests} guests</em>
         </h1>
-        <dl className="mt-6 grid grid-cols-2 gap-px overflow-hidden rounded-2xl border border-border bg-border sm:grid-cols-5">
+        <dl className="mt-6 grid grid-cols-2 gap-px overflow-hidden rounded-2xl border border-border bg-border sm:grid-cols-4">
           {[
             ["When", when],
-            ["Dietary", plan.dietaryCount ? `${plan.dietaryCount} guests` : "None"],
             ["Cuisine", cuisineLabel],
             ["Budget", plan.budget ? `$${plan.budget.toLocaleString()}` : "Open"],
             ["Deliver to", plan.address],
@@ -206,7 +201,20 @@ function Results() {
 }
 
 function ReplyBlock({ reply, onRetry }: { reply: PlannerReply; onRetry?: () => void }) {
-  if (reply.ok) return <PlannerReplyView text={reply.text} />;
+  if (reply.ok) return (
+    <div className="grid gap-5">
+      {reply.mock && (
+        <div role="alert" className="flex gap-3 border border-highlight bg-highlight/20 p-5 text-highlight-foreground">
+          <AlertTriangle className="size-5 shrink-0" />
+          <div>
+            <p className="font-semibold">Demo results — not real restaurant offers</p>
+            <p className="mt-1 text-sm">Live menus were unavailable. These restaurants and prices are fictional; do not use them to order.</p>
+          </div>
+        </div>
+      )}
+      <PlannerReplyView text={reply.text} />
+    </div>
+  );
   return (
     <div className="flex flex-col items-start gap-4 rounded-3xl border border-destructive/40 bg-destructive/5 p-6 sm:flex-row sm:items-center">
       <AlertTriangle className="size-6 shrink-0 text-destructive" />

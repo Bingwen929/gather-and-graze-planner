@@ -1,8 +1,9 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
+import { parsePlannerResponse, type PlannerReply } from "@/lib/planner-response";
 
-// Public chat trigger of the "AI Pizza Order Optimizer" n8n workflow.
-const CHAT_WEBHOOK_PATH = "/webhook/c1d60280-b406-4959-8ddb-f24ab633e92a/chat";
+// Published API webhook preserves the conversation and includes result metadata.
+const CHAT_WEBHOOK_PATH = "/webhook/group-food-optimizer";
 const GATEWAY_URL = "https://connector-gateway.lovable.dev/n8n";
 
 const inputSchema = z.object({
@@ -10,7 +11,7 @@ const inputSchema = z.object({
   message: z.string().trim().min(1).max(2000),
 });
 
-export type PlannerReply = { ok: true; text: string } | { ok: false; error: string };
+export type { PlannerReply } from "@/lib/planner-response";
 
 export const askPlanner = createServerFn({ method: "POST" })
   .inputValidator((data: unknown) => inputSchema.parse(data))
@@ -32,9 +33,8 @@ export const askPlanner = createServerFn({ method: "POST" })
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          action: "sendMessage",
           sessionId: data.sessionId,
-          chatInput: data.message,
+          message: data.message,
         }),
       });
     } catch (err) {
@@ -52,22 +52,8 @@ export const askPlanner = createServerFn({ method: "POST" })
             "The food-sourcing workflow is switched off in n8n. Turn it on (publish it) and try again.",
         };
       }
-      return { ok: false, error: `The planner ran into a problem (${res.status}). Please try again.` };
+      return { ok: false, error: `The planner ran into a problem (${res.status}): ${raw}` };
     }
 
-    let text = raw;
-    try {
-      const parsed = JSON.parse(raw) as unknown;
-      const first = Array.isArray(parsed) ? parsed[0] : parsed;
-      if (first && typeof first === "object") {
-        const o = first as Record<string, unknown>;
-        const value = o['output'] ?? o['text'] ?? o['message'];
-        if (typeof value === "string") text = value;
-      }
-    } catch {
-      // plain text response
-    }
-
-    if (!text.trim()) return { ok: false, error: "The planner finished without any results." };
-    return { ok: true, text };
+    return parsePlannerResponse(raw);
   });
