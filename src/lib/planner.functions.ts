@@ -2,8 +2,8 @@ import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { parsePlannerResponse, type PlannerReply } from "@/lib/planner-response";
 
-// Published API webhook preserves the conversation and includes result metadata.
-const CHAT_WEBHOOK_PATH = "/webhook/group-food-optimizer";
+// Published chat trigger for the improved AI Pizza Order Optimizer Final workflow.
+const CHAT_WEBHOOK_PATH = "/webhook/c1d60280-b406-4959-8ddb-f24ab633e92a/chat";
 const GATEWAY_URL = "https://connector-gateway.lovable.dev/n8n";
 
 const inputSchema = z.object({
@@ -33,8 +33,9 @@ export const askPlanner = createServerFn({ method: "POST" })
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
+          action: "sendMessage",
           sessionId: data.sessionId,
-          message: data.message,
+          chatInput: data.message,
         }),
       });
     } catch (err) {

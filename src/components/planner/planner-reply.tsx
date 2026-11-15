@@ -47,11 +47,11 @@ export function PlannerReplyView({ text }: { text: string }) {
     );
   }
 
-  const rest = sections.slice(1);
-  const options = rest.filter((s) => /^Option [A-Z]/.test(s.title));
-  const others = rest.filter((s) => !/^Option [A-Z]/.test(s.title));
-  const details = others.filter((s) => s.title !== "Summary");
-  const budgetWarning = text.split(/\r?\n/).find((line) => /No option fits/i.test(line));
+  const options = sections.filter((s) => /^Option [A-Z]/.test(s.title));
+  const details = sections.filter((s) => s.title === "How I decided" || s.title === "Notes");
+  const budgetWarning =
+    sections.find((s) => /^Heads up:/i.test(s.title))?.title ??
+    text.split(/\r?\n/).find((line) => /No option fits/i.test(line));
 
   return (
     <div className="grid gap-6">
@@ -64,7 +64,7 @@ export function PlannerReplyView({ text }: { text: string }) {
       {options.length ? (
         <div>
           <h2 className="text-2xl font-medium">Your restaurant options</h2>
-          <p className="mt-1 text-sm text-muted-foreground">Estimated totals include fees, tax and tip. Confirm prices before ordering.</p>
+          <p className="mt-1 text-sm text-muted-foreground">Estimated totals include food and reported fees; tax and tip are excluded. Confirm prices before ordering.</p>
           {budgetWarning && <p className="mt-3 border-l-2 border-primary pl-3 text-sm font-medium">{budgetWarning.replace(/^\s*-\s*/, "")}</p>}
         </div>
       ) : (

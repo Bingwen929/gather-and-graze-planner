@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { parsePlannerResponse } from "@/lib/planner-response";
-import { minimumPlannerBudget, splitPlannerReply } from "@/lib/event-plan";
+import { splitPlannerReply } from "@/lib/event-plan";
 
 describe("updated n8n contract", () => {
   it("preserves follow-up metadata", () => {
@@ -23,12 +23,10 @@ describe("updated n8n contract", () => {
     expect(result.sections[0]?.title).toBe("Tacos for 25 people, budget $200.00");
     expect(result.sections[1]?.title).toBe("Option A: Cheapest");
   });
-  for (const [cuisine, minimum] of [["pizza", 140], ["burgers", 210], ["tacos", 175], ["sushi", 275], ["sandwiches", 210]] as const) {
-    it(`matches n8n's ${cuisine} minimum for 25 guests`, () => {
-      expect(minimumPlannerBudget(cuisine, 25)).toBe(minimum);
-    });
-  }
-  it("does not invent a minimum when cuisine is skipped", () => {
-    expect(minimumPlannerBudget(undefined, 25)).toBeNull();
+  it("detects fictional data even when a budget warning comes first", () => {
+    const result = parsePlannerResponse(JSON.stringify({
+      output: "**Heads up: the budget is too low.**\n\n**DEMO MODE: fictional MOCK data.**\n\n**Pizza for 25 people**",
+    }));
+    expect(result).toMatchObject({ ok: true, mock: true });
   });
 });

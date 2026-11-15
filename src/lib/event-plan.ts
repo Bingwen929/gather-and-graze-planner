@@ -1,25 +1,5 @@
 import { z } from "zod";
 
-// Food types the n8n "AI Pizza Order Optimizer" workflow can search for.
-export const CUISINES = [
-  { value: "pizza", label: "Pizza" },
-  { value: "burgers", label: "Burgers" },
-  { value: "tacos", label: "Tacos & burritos" },
-  { value: "sushi", label: "Sushi" },
-  { value: "sandwiches", label: "Sandwiches & subs" },
-] as const;
-
-export type Cuisine = (typeof CUISINES)[number]["value"];
-
-/** Guidance from n8n's Validate Request step for the required total budget. */
-export function minimumPlannerBudget(cuisine: Cuisine | undefined, guests: number): number | null {
-  if (!cuisine || !Number.isFinite(guests) || guests < 1) return null;
-  const foodPerPerson: Record<Cuisine, number> = {
-    pizza: 4, burgers: 6, tacos: 5, sushi: 8, sandwiches: 6,
-  };
-  return Math.ceil((foodPerPerson[cuisine] * guests * 1.35 + 4) / 5) * 5;
-}
-
 const todayISO = () => {
   const d = new Date();
   const m = String(d.getMonth() + 1).padStart(2, "0");
@@ -34,9 +14,11 @@ export const eventPlanSchema = z
       .int("Use a whole number")
       .min(1, "At least 1 person")
       .max(2000, "That's a lot — 2,000 people max"),
-    cuisine: z.enum(["pizza", "burgers", "tacos", "sushi", "sandwiches"], {
-      message: "Choose a food type",
-    }),
+    preferences: z
+      .string()
+      .trim()
+      .max(200, "Keep pizza preferences under 200 characters")
+      .optional(),
     date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Pick the event date"),
     time: z.string().regex(/^\d{2}:\d{2}$/, "Pick a start time"),
     budget: z.coerce
@@ -69,16 +51,15 @@ function formatWhen(date: string, time: string) {
   });
 }
 
-/** Turn the form into the plain-language request the n8n chat workflow understands. */
+/** Turn the form into the plain-language request the n8n pizza workflow understands. */
 export function buildPlannerMessage(plan: EventPlan): string {
-  const cuisine = CUISINES.find((c) => c.value === plan.cuisine);
   const parts: string[] = [
-    `I'm planning food for an event with ${plan.guests} people.`,
+    `I'm planning pizza for an event with ${plan.guests} people.`,
     `Delivery address: ${plan.address}.`,
     `The event is on ${formatWhen(plan.date, plan.time)}; the food should arrive by then.`,
   ];
 
-  parts.push(`Preferred food: ${cuisine?.label.toLowerCase() ?? plan.cuisine}.`);
+  if (plan.preferences) parts.push(`Pizza preferences: ${plan.preferences}.`);
   parts.push(`Total budget: $${plan.budget}.`);
 
   return parts.join(" ");

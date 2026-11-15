@@ -5,10 +5,9 @@ import { ArrowRight, CalendarDays, MapPin, Search, Sparkles, Utensils } from "lu
 import heroTable from "@/assets/hero-table.jpg";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Chip } from "@/components/planner/chip";
 import { Field } from "@/components/planner/field";
 import { NumberStepper } from "@/components/planner/number-stepper";
-import { CUISINES, eventPlanSchema, minimumPlannerBudget, type Cuisine } from "@/lib/event-plan";
+import { eventPlanSchema } from "@/lib/event-plan";
 
 export const Route = createFileRoute("/")({
   head: () => ({
@@ -17,13 +16,13 @@ export const Route = createFileRoute("/")({
       {
         name: "description",
         content:
-          "Tell us your headcount, cuisine, date and budget. Spread compares DoorDash and Uber Eats to find the best food for your event.",
+          "Tell us your headcount, pizza preferences, date and budget. Spread compares DoorDash and Uber Eats to find pizza for your event.",
       },
       { property: "og:title", content: "Spread — Food sourcing for your next event" },
       {
         property: "og:description",
         content:
-          "Headcount, cuisine, date and budget in — the best group food order out.",
+          "Headcount, pizza preferences, date and budget in — clear group pizza orders out.",
       },
       { property: "og:type", content: "website" },
       { name: "twitter:card", content: "summary_large_image" },
@@ -32,13 +31,13 @@ export const Route = createFileRoute("/")({
   component: Index,
 });
 
-type FieldKey = "guests" | "cuisine" | "date" | "time" | "budget" | "address";
+type FieldKey = "guests" | "preferences" | "date" | "time" | "budget" | "address";
 type Errors = Partial<Record<FieldKey, string>>;
 
 function Index() {
   const navigate = useNavigate();
   const [guests, setGuests] = useState("25");
-  const [cuisine, setCuisine] = useState<Cuisine | undefined>(undefined);
+  const [preferences, setPreferences] = useState("");
   const [date, setDate] = useState("");
   const [time, setTime] = useState("18:00");
   const [budget, setBudget] = useState("");
@@ -47,13 +46,12 @@ function Index() {
 
   const perPerson =
     Number(budget) > 0 && Number(guests) > 0 ? Number(budget) / Number(guests) : null;
-  const minimumBudget = minimumPlannerBudget(cuisine, Number(guests));
 
   function onSubmit(e: FormEvent) {
     e.preventDefault();
     const result = eventPlanSchema.safeParse({
       guests,
-      cuisine,
+      preferences,
       date,
       time,
       budget,
@@ -75,7 +73,7 @@ function Index() {
       search: {
         sid: crypto.randomUUID(),
         guests: p.guests,
-        cuisine: p.cuisine,
+        preferences: p.preferences ?? "",
         date: p.date,
         time: p.time,
         budget: p.budget,
@@ -89,28 +87,28 @@ function Index() {
       {/* Left: story */}
       <section className="animate-rise lg:sticky lg:top-8 lg:self-start">
         <p className="inline-flex items-center gap-2 rounded-full bg-secondary px-3 py-1 text-xs font-semibold uppercase tracking-[0.14em] text-secondary-foreground">
-          <Utensils className="size-3.5" /> Event food sourcing
+          <Utensils className="size-3.5" /> Event pizza sourcing
         </p>
         <h1 className="mt-5 text-5xl font-medium leading-[1.02] text-foreground sm:text-6xl">
           Feed the whole room,{" "}
           <em className="font-normal italic text-primary">without the spreadsheet.</em>
         </h1>
         <p className="mt-5 max-w-md text-lg text-muted-foreground">
-          Tell us who's coming and when. We compare nearby restaurants on DoorDash and Uber Eats
-          and bring back the best-value orders for your crowd.
+          Tell us who's coming and when. We compare nearby pizzerias on DoorDash and Uber Eats
+          and bring back clear order options for your crowd.
         </p>
 
         <figure className="relative mt-8 overflow-hidden rounded-3xl shadow-card">
           <img
             src={heroTable}
-            alt="A long table spread with tacos, sushi, pizza, sandwiches and burgers"
+            alt="A long table set for a group meal"
             width={1600}
             height={1104}
             className="aspect-[4/3] w-full object-cover"
           />
           <div className="absolute inset-0 bg-gradient-fade" />
           <figcaption className="absolute inset-x-5 bottom-5 flex flex-wrap gap-2">
-            {["Sized to your headcount", "Menus compared", "Estimated all-in prices"].map((t) => (
+            {["Sized to your headcount", "Menus compared", "Estimated order prices"].map((t) => (
               <span
                 key={t}
                 className="rounded-full bg-card/90 px-3 py-1.5 text-xs font-semibold text-foreground backdrop-blur"
@@ -125,7 +123,7 @@ function Index() {
           {[
             { icon: CalendarDays, t: "Share the details", d: "Headcount, date, a few preferences." },
             { icon: Search, t: "We search", d: "Menus compared across delivery apps." },
-            { icon: Sparkles, t: "Pick an order", d: "Cheapest, best value and an alternative." },
+            { icon: Sparkles, t: "Pick an order", d: "Three clear restaurant options." },
           ].map(({ icon: Icon, t, d }) => (
             <li key={t} className="grid gap-1.5">
               <Icon className="size-5 text-primary" />
@@ -145,7 +143,7 @@ function Index() {
           Tell us about your event
         </h2>
         <p className="mt-2 text-sm text-muted-foreground">
-          Takes about a minute. Choose a food type and total budget so we can start searching.
+          Takes about a minute. Add your total budget and any pizza preferences so we can start searching.
         </p>
 
         <form onSubmit={onSubmit} noValidate className="mt-8">
@@ -165,19 +163,22 @@ function Index() {
             />
           </Field>
 
-          <Field index="02" title="What food would you like?" error={errors.cuisine}>
-            <div
-              className="flex flex-wrap gap-2"
-              role="group"
-              aria-label="Food type"
-              aria-invalid={!!errors.cuisine}
-            >
-              {CUISINES.map((c) => (
-                <Chip key={c.value} on={cuisine === c.value} onClick={() => setCuisine(c.value)}>
-                  {c.label}
-                </Chip>
-              ))}
-            </div>
+          <Field
+            index="02"
+            title="What pizza would you like?"
+            htmlFor="preferences"
+            hint="Optional — add toppings or styles, such as pepperoni, mushroom or margherita."
+            error={errors.preferences}
+          >
+            <Input
+              id="preferences"
+              placeholder="e.g. Pepperoni and mushroom"
+              maxLength={200}
+              value={preferences}
+              onChange={(e) => setPreferences(e.target.value)}
+              aria-invalid={!!errors.preferences}
+              className="h-12 rounded-xl bg-card text-base aria-[invalid=true]:border-destructive"
+            />
           </Field>
 
           <Field
@@ -231,14 +232,6 @@ function Index() {
                 per person
               </p>
             )}
-            {minimumBudget !== null && (
-              <p className="text-sm text-muted-foreground">
-                Suggested minimum: ${minimumBudget.toLocaleString()} including estimated fees, tax and tip.
-                {Number(budget) > 0 && Number(budget) < minimumBudget
-                  ? " The planner will ask for a higher budget before searching."
-                  : ""}
-              </p>
-            )}
           </Field>
 
           <Field
@@ -266,7 +259,7 @@ function Index() {
               We never place orders or take payment.
             </p>
             <Button type="submit" variant="hero" size="xl" className="w-full sm:w-auto">
-              Find food for my event <ArrowRight />
+              Find pizza for my event <ArrowRight />
             </Button>
           </div>
         </form>

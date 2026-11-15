@@ -11,12 +11,12 @@ import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/
 import { PlannerReplyView } from "@/components/planner/planner-reply";
 import { Searching } from "@/components/planner/searching";
 import { askPlanner, type PlannerReply } from "@/lib/planner.functions";
-import { buildPlannerMessage, CUISINES, eventPlanSchema } from "@/lib/event-plan";
+import { buildPlannerMessage, eventPlanSchema } from "@/lib/event-plan";
 
 const searchSchema = z.object({
   sid: z.string().optional(),
   guests: z.coerce.number().optional(),
-  cuisine: z.string().optional(),
+  preferences: z.string().optional(),
   date: z.string().optional(),
   time: z.string().optional(),
   budget: z.coerce.number().optional(),
@@ -35,12 +35,12 @@ export const Route = createFileRoute("/results")({
       { title: "Your event food plan — Spread" },
       {
         name: "description",
-        content: "Recommended group food orders for your event, sized to your headcount and budget.",
+        content: "Recommended pizza orders for your event, sized to your headcount and budget.",
       },
       { property: "og:title", content: "Your event food plan — Spread" },
       {
         property: "og:description",
-        content: "Cheapest, best value and alternative food orders for your event.",
+        content: "Clear pizza order options for your event, with estimated totals and delivery times.",
       },
       { property: "og:type", content: "website" },
       { name: "twitter:card", content: "summary_large_image" },
@@ -60,7 +60,7 @@ function Results() {
     () =>
       eventPlanSchema.safeParse({
         guests: search.guests,
-        cuisine: search.cuisine,
+        preferences: search.preferences,
         date: search.date,
         time: search.time,
         budget: search.budget,
@@ -116,7 +116,6 @@ function Results() {
     );
   }
 
-  const cuisineLabel = CUISINES.find((c) => c.value === plan.cuisine)?.label ?? plan.cuisine;
   const when = new Date(`${plan.date}T${plan.time}`).toLocaleString("en-US", {
     weekday: "short",
     month: "short",
@@ -141,12 +140,12 @@ function Results() {
 
       <header className="mt-6 animate-rise">
         <h1 className="text-4xl font-medium sm:text-5xl">
-          Food for <em className="italic text-primary">{plan.guests} guests</em>
+          Pizza for <em className="italic text-primary">{plan.guests} guests</em>
         </h1>
         <dl className="mt-6 grid grid-cols-2 gap-px overflow-hidden rounded-2xl border border-border bg-border sm:grid-cols-4">
           {[
             ["When", when],
-            ["Cuisine", cuisineLabel],
+            ["Preferences", plan.preferences || "Any pizza"],
             ["Budget", plan.budget ? `$${plan.budget.toLocaleString()}` : "Open"],
             ["Deliver to", plan.address],
           ].map(([k, v]) => (
@@ -186,7 +185,7 @@ function Results() {
               maxLength={2000}
               value={draft}
               onChange={(e) => setDraft(e.target.value)}
-              placeholder="e.g. Let's do tacos, budget around $350"
+              placeholder="e.g. We prefer pepperoni and mushroom"
               className="rounded-xl bg-background text-base"
             />
             <div className="flex justify-end">
