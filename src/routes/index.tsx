@@ -32,7 +32,7 @@ export const Route = createFileRoute("/")({
   component: Index,
 });
 
-type FieldKey = "guests" | "date" | "time" | "budget" | "address";
+type FieldKey = "guests" | "cuisine" | "date" | "time" | "budget" | "address";
 type Errors = Partial<Record<FieldKey, string>>;
 
 function Index() {
@@ -56,7 +56,7 @@ function Index() {
       cuisine,
       date,
       time,
-      budget: budget.trim() ? budget : undefined,
+      budget,
       address,
     });
     if (!result.success) {
@@ -145,8 +145,7 @@ function Index() {
           Tell us about your event
         </h2>
         <p className="mt-2 text-sm text-muted-foreground">
-          Takes about a minute. Not sure about the food or budget? Skip them — the planner will
-          help you decide.
+          Takes about a minute. Choose a food type and total budget so we can start searching.
         </p>
 
         <form onSubmit={onSubmit} noValidate className="mt-8">
@@ -166,11 +165,13 @@ function Index() {
             />
           </Field>
 
-          <Field index="02" title="Preferred cuisine" optional>
-            <div className="flex flex-wrap gap-2" role="group" aria-label="Preferred cuisine">
-              <Chip on={cuisine === undefined} onClick={() => setCuisine(undefined)}>
-                Not sure yet
-              </Chip>
+          <Field index="02" title="What food would you like?" error={errors.cuisine}>
+            <div
+              className="flex flex-wrap gap-2"
+              role="group"
+              aria-label="Food type"
+              aria-invalid={!!errors.cuisine}
+            >
               {CUISINES.map((c) => (
                 <Chip key={c.value} on={cuisine === c.value} onClick={() => setCuisine(c.value)}>
                   {c.label}
@@ -209,7 +210,6 @@ function Index() {
           <Field
             index="04"
             title="Ideal total budget"
-            optional
             htmlFor="budget"
             error={errors.budget}
           >
@@ -221,6 +221,7 @@ function Index() {
                 placeholder="e.g. 400"
                 value={budget}
                 onChange={(e) => setBudget(e.target.value.replace(/[^0-9.]/g, ""))}
+                aria-invalid={!!errors.budget}
                 className="h-12 w-full bg-transparent px-2 text-base text-foreground outline-none placeholder:text-muted-foreground"
               />
             </div>

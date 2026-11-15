@@ -11,7 +11,7 @@ export const CUISINES = [
 
 export type Cuisine = (typeof CUISINES)[number]["value"];
 
-/** Guidance from n8n's Validate Request step; optional budgets stay optional. */
+/** Guidance from n8n's Validate Request step for the required total budget. */
 export function minimumPlannerBudget(cuisine: Cuisine | undefined, guests: number): number | null {
   if (!cuisine || !Number.isFinite(guests) || guests < 1) return null;
   const foodPerPerson: Record<Cuisine, number> = {
@@ -34,14 +34,15 @@ export const eventPlanSchema = z
       .int("Use a whole number")
       .min(1, "At least 1 person")
       .max(2000, "That's a lot — 2,000 people max"),
-    cuisine: z.enum(["pizza", "burgers", "tacos", "sushi", "sandwiches"]).optional(),
+    cuisine: z.enum(["pizza", "burgers", "tacos", "sushi", "sandwiches"], {
+      message: "Choose a food type",
+    }),
     date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Pick the event date"),
     time: z.string().regex(/^\d{2}:\d{2}$/, "Pick a start time"),
     budget: z.coerce
-      .number()
+      .number({ message: "Enter your total budget" })
       .positive("Budget must be more than $0")
-      .max(1_000_000, "Budget looks too high")
-      .optional(),
+      .max(1_000_000, "Budget looks too high"),
     address: z
       .string()
       .trim()
@@ -77,17 +78,8 @@ export function buildPlannerMessage(plan: EventPlan): string {
     `The event is on ${formatWhen(plan.date, plan.time)}; the food should arrive by then.`,
   ];
 
-  parts.push(
-    cuisine
-      ? `Preferred food: ${cuisine.label.toLowerCase()}.`
-      : "I'm not sure which food to choose yet.",
-  );
-
-  parts.push(
-    plan.budget
-      ? `Total budget: $${plan.budget}.`
-      : "I'm not sure about the budget yet.",
-  );
+  parts.push(`Preferred food: ${cuisine?.label.toLowerCase() ?? plan.cuisine}.`);
+  parts.push(`Total budget: $${plan.budget}.`);
 
   return parts.join(" ");
 }

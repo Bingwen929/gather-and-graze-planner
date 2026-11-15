@@ -3,3 +3,4 @@
 - [x] Show budget guidance and clearly identify fictional recommendations.
 - [x] Test parsing and verify a real form submission and follow-up.
 - [x] Remove dietary questions and exclude dietary restrictions from event requests.
+- [x] Require cuisine and budget throughout the website.

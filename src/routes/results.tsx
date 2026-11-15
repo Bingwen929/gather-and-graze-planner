@@ -116,7 +116,7 @@ function Results() {
     );
   }
 
-  const cuisineLabel = CUISINES.find((c) => c.value === plan.cuisine)?.label ?? "Planner's pick";
+  const cuisineLabel = CUISINES.find((c) => c.value === plan.cuisine)?.label ?? plan.cuisine;
   const when = new Date(`${plan.date}T${plan.time}`).toLocaleString("en-US", {
     weekday: "short",
     month: "short",
