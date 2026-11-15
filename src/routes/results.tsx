@@ -7,6 +7,7 @@ import { AlertTriangle, ArrowLeft, RotateCcw, Send } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
+import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 import { PlannerReplyView } from "@/components/planner/planner-reply";
 import { Searching } from "@/components/planner/searching";
 import { askPlanner, type PlannerReply } from "@/lib/planner.functions";
@@ -160,16 +161,16 @@ function Results() {
       </header>
 
       <div className="mt-10 grid gap-8">
-        {first.isPending ? <Searching /> : firstReply && <ReplyBlock reply={firstReply} onRetry={() => first.refetch()} />}
-
-        {turns.map((t) => (
-          <div key={t.id} className="grid gap-6">
-            <p className="ml-auto max-w-lg rounded-3xl rounded-br-md bg-secondary px-5 py-3 text-secondary-foreground">
-              {t.question}
-            </p>
-            {t.reply ? <ReplyBlock reply={t.reply} /> : <Searching />}
-          </div>
-        ))}
+        {turns.length > 0 && <Accordion type="single" collapsible>
+          <AccordionItem value="conversation">
+            <AccordionTrigger>Earlier conversation</AccordionTrigger>
+            <AccordionContent><div className="grid gap-6">
+              {firstReply && <ReplyBlock reply={firstReply} />}
+              {turns.slice(0, -1).map((t) => <div key={t.id} className="grid gap-3"><p className="text-sm font-medium">{t.question}</p>{t.reply && <ReplyBlock reply={t.reply} />}</div>)}
+            </div></AccordionContent>
+          </AccordionItem>
+        </Accordion>}
+        {first.isPending || followUp.isPending ? <Searching /> : lastReply && <ReplyBlock reply={lastReply} {...(turns.length ? {} : { onRetry: () => first.refetch() })} />}
 
         {canReply && (
           <form

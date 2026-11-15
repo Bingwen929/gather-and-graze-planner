@@ -1,7 +1,9 @@
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-import { MessageCircleQuestion } from "lucide-react";
+import { Clock, ExternalLink, MessageCircleQuestion } from "lucide-react";
 
+import { Button } from "@/components/ui/button";
+import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 import { splitPlannerReply } from "@/lib/event-plan";
 import { cn } from "@/lib/utils";
 
@@ -49,8 +51,8 @@ export function PlannerReplyView({ text }: { text: string }) {
   const rest = sections.slice(1);
   const options = rest.filter((s) => /^Option [A-Z]/.test(s.title));
   const others = rest.filter((s) => !/^Option [A-Z]/.test(s.title));
-  const before = others.filter((s) => s.title !== "Notes");
-  const notes = others.filter((s) => s.title === "Notes");
+  const details = others.filter((s) => s.title !== "Summary");
+  const budgetWarning = text.split(/\r?\n/).find((line) => /No option fits/i.test(line));
 
   return (
     <div className="grid gap-6">
@@ -60,70 +62,80 @@ export function PlannerReplyView({ text }: { text: string }) {
         </div>
       )}
 
-      <div className="rounded-3xl bg-ink p-7 text-ink-foreground">
-        <p className="text-xs font-semibold uppercase tracking-[0.16em] text-highlight">
-          Your plan
-        </p>
-        <h2 className="mt-2 text-3xl font-medium">{header.title}</h2>
-        {header.body && (
-          <p className="mt-3 text-sm text-ink-foreground/75">{header.body.replace(/\*\*/g, "")}</p>
-        )}
-      </div>
+      {options.length ? (
+        <div>
+          <h2 className="text-2xl font-medium">Your restaurant options</h2>
+          <p className="mt-1 text-sm text-muted-foreground">Estimated totals include fees, tax and tip. Confirm prices before ordering.</p>
+          {budgetWarning && <p className="mt-3 border-l-2 border-primary pl-3 text-sm font-medium">{budgetWarning.replace(/^\s*-\s*/, "")}</p>}
+        </div>
+      ) : (
+        <div>
+          <h2 className="text-2xl font-medium">{header.title}</h2>
+          {header.body && <Md>{header.body}</Md>}
+        </div>
+      )}
 
       {options.length > 0 && (
         <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-3">
           {options.map((o, i) => {
             const [, letter, label] = o.title.match(/^Option ([A-Z]):\s*(.*)$/) ?? [];
             const featured = /best value/i.test(label ?? "");
+            const fields = new Map(o.body.split(/\r?\n/).flatMap((line) => {
+              const match = line.match(/^\s*-\s*([^:]+):\s*(.*)$/);
+              return match?.[1] && match[2] ? [[match[1], match[2]] as const] : [];
+            }));
+            const total = fields.get("Estimated total") ?? "";
+            const price = total.match(/\$[\d,.]+/)?.[0];
+            const restaurant = fields.get("Restaurant");
+            const order = fields.get("Order")?.replace(/\s+at\s+\$[\d,.]+/g, "");
+            const link = fields.get("Link");
+            const safeLink = link && /^https:\/\//i.test(link) ? link.replace(/\|/g, "%7C") : null;
             return (
               <article
                 key={o.title}
-                style={{ animationDelay: `${i * 90}ms` }}
                 className={cn(
-                  "animate-rise flex flex-col gap-4 rounded-3xl border bg-card p-6 shadow-card",
+                  "flex min-w-0 flex-col gap-5 rounded-lg border bg-card p-6 shadow-card",
                   featured ? "border-primary ring-1 ring-primary" : "border-border",
                 )}
               >
-                <header className="flex items-center gap-3">
-                  <span
-                    className={cn(
-                      "grid size-10 place-items-center rounded-full font-display text-lg",
-                      featured ? "bg-primary text-primary-foreground" : "bg-muted text-foreground",
-                    )}
-                  >
-                    {letter}
-                  </span>
-                  <div>
-                    <p className="text-xs uppercase tracking-[0.14em] text-muted-foreground">
-                      Option {letter}
-                    </p>
-                    <h3 className="text-xl font-medium">{label || o.title}</h3>
-                  </div>
+                <header>
+                  <p className={cn("text-xs font-semibold uppercase", featured ? "text-primary" : "text-muted-foreground")}>
+                    {label || `Option ${letter}`}
+                  </p>
+                  <h3 className="mt-2 break-words text-xl font-medium">{restaurant || o.title}</h3>
+                  {fields.get("Platform") && <p className="mt-1 text-sm text-muted-foreground">{fields.get("Platform")}</p>}
                 </header>
-                <Md>{o.body}</Md>
+                {price && <div>
+                  <p className="font-display text-4xl font-medium">{price}</p>
+                  <p className="mt-1 text-sm text-muted-foreground">{fields.get("Cost per person")} per person</p>
+                  {/over budget/i.test(total) && <p className="mt-2 text-sm font-semibold text-primary">Over budget</p>}
+                </div>}
+                {order && <div className="border-t border-border pt-4">
+                  <p className="mb-2 text-xs font-semibold uppercase text-muted-foreground">Your order</p>
+                  <ul className="grid gap-2 text-sm leading-relaxed">{order.split("; ").map((item) => <li key={item}>{item}</li>)}</ul>
+                </div>}
+                {fields.get("Estimated delivery") && <p className="flex items-center gap-2 text-sm text-muted-foreground"><Clock className="size-4 shrink-0" />{fields.get("Estimated delivery")?.replace(" (advertised)", "")}</p>}
+                <div className="mt-auto grid gap-2">
+                  {safeLink && <Button asChild variant={featured ? "hero" : "outline"} className="w-full"><a href={safeLink} target="_blank" rel="noopener noreferrer">View restaurant <ExternalLink /></a></Button>}
+                  <Accordion type="single" collapsible>
+                    <AccordionItem value={`details-${i}`} className="border-0">
+                      <AccordionTrigger>Price breakdown & details</AccordionTrigger>
+                      <AccordionContent><Md>{o.body}</Md></AccordionContent>
+                    </AccordionItem>
+                  </Accordion>
+                </div>
               </article>
             );
           })}
         </div>
       )}
 
-      {before.map((s) => (
-        <section key={s.title} className="rounded-3xl border border-border bg-card p-6">
-          <h3 className="text-xl font-medium">{s.title}</h3>
-          <div className="mt-3">
-            <Md>{s.body}</Md>
-          </div>
-        </section>
-      ))}
-
-      {notes.map((s) => (
-        <section key={s.title} className="rounded-3xl bg-muted p-6">
-          <h3 className="text-lg font-medium">{s.title}</h3>
-          <div className="mt-2 text-sm">
-            <Md>{s.body}</Md>
-          </div>
-        </section>
-      ))}
+      {details.length > 0 && <Accordion type="single" collapsible>
+        <AccordionItem value="method">
+          <AccordionTrigger>How these options were chosen & important notes</AccordionTrigger>
+          <AccordionContent><div className="grid gap-5">{details.map((s) => <section key={s.title}><h3 className="mb-2 text-lg font-medium">{s.title}</h3><Md>{s.body}</Md></section>)}</div></AccordionContent>
+        </AccordionItem>
+      </Accordion>}
     </div>
   );
 }
